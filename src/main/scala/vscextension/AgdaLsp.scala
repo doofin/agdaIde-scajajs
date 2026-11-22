@@ -4,7 +4,7 @@ import scala.scalajs.js
 
 import typings.vscode.mod as vscode
 
-import facade.languageClientAPI.{DocumentFilter, LanguageClient, LanguageClientOptions, ServerOptions}
+import facade.vsLanguageClient.{DocumentFilter, LanguageClient, LanguageClientOptions, ServerOptions}
 import facade.vscodeUtils.*
 
 object AgdaLsp {

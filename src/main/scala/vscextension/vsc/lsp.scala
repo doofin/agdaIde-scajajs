@@ -4,7 +4,7 @@ import scala.scalajs.js
 
 import typings.vscode.mod as vscode
 
-import _root_.vscextension.facade.languageClientAPI.{
+import _root_.vscextension.facade.vsLanguageClient.{
   DocumentFilter,
   LanguageClient,
   LanguageClientOptions,

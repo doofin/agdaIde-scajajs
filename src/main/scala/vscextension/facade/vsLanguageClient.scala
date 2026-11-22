@@ -6,7 +6,25 @@ import scala.scalajs.js.annotation.JSImport
 import typings.vscode.mod as vscode
 import scala.annotation.unused
 
-object languageClientAPI {
+object vsLanguageClient {
+  @js.native
+  @JSImport("vscode-languageclient/node", "LanguageClient")
+  class LanguageClient(
+      @unused id: String,
+      @unused name: String,
+      @unused serverOptions: ServerOptions,
+      @unused clientOptions: LanguageClientOptions
+  ) extends js.Object {
+    def start(): js.Promise[Unit] = js.native
+    def stop(): js.Promise[Unit] = js.native
+    def setTrace(value: Int): js.Promise[Unit] = js.native
+    def sendRequest(method: String, params: js.Any): js.Promise[js.Dynamic] = js.native
+    def onRequest(
+        method: String,
+        handler: js.Function1[js.Dynamic, js.Promise[Null]]
+    ): vscode.Disposable = js.native
+  }
+
   @js.native
   @JSImport("vscode-languageclient/node", "TransportKind")
   object TransportKind extends js.Object {
@@ -75,21 +93,4 @@ object languageClientAPI {
         .asInstanceOf[LanguageClientOptions]
   }
 
-  @js.native
-  @JSImport("vscode-languageclient/node", "LanguageClient")
-  class LanguageClient(
-      @unused id: String,
-      @unused name: String,
-      @unused serverOptions: ServerOptions,
-      @unused clientOptions: LanguageClientOptions
-  ) extends js.Object {
-    def start(): js.Promise[Unit] = js.native
-    def stop(): js.Promise[Unit] = js.native
-    def setTrace(value: Int): js.Promise[Unit] = js.native
-    def sendRequest(method: String, params: js.Any): js.Promise[js.Dynamic] = js.native
-    def onRequest(
-        method: String,
-        handler: js.Function1[js.Dynamic, js.Promise[Null]]
-    ): vscode.Disposable = js.native
-  }
 }
