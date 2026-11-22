@@ -2,10 +2,11 @@ package vscextension.io
 
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
+// import typings.node.childProcessMod.spawn
 
 object process {
   @js.native
-  @JSImport("child_process",JSImport.Namespace)
+  @JSImport("child_process", JSImport.Namespace)
   private object ChildProcessModule extends js.Object {
     def spawn(command: String, args: js.Array[String], options: SpawnOptions): ChildProcess = js.native
   }
@@ -41,6 +42,12 @@ object process {
         .asInstanceOf[SpawnOptions]
   }
 
-  def spawn(command: String, args: js.Array[String], cwd: String): ChildProcess =
+  def spawn(command: String, args: js.Array[String], cwd: String): ChildProcess = {
+    //  todo use typings for SpawnOptions
+    // val options=
+    // spawn(command, options)
+
     ChildProcessModule.spawn(command, args, SpawnOptions(cwd))
+  }
+
 }
