@@ -20,7 +20,15 @@ Principles of documentation editing
 - only concisely describe the result
 - be conservative when editing documentation
 
-## Rounds of improvement
+Principles of coding:
+- write modular and reusable code,DRY
+- use functional programming like immutability, pure functions, and higher-order functions
+- use Option, Either, and other functional data types for error handling and optional values
+- don't dig too much into pure FP, use while loops, etc rather than recursion everywhere
+
+## Rounds of implementation
+1st round is mainly about establishing a MVP(minimum viable product).
+
 1st round instructions:
-- visit the provided reference vscode plugins for inspiration about what example scenarios and utilities can be included in this documentation, make it brief.
-- add syntax highlighting example code for this scalajs project
+- able to connect to Agda/ALS servers
+- implement syntax highlighting when opening Agda files

@@ -1,134 +1,103 @@
-# VS Code extensions with Scala.js
+# Agda Mode for VS Code in Scala.js
 
-Build VS Code extensions in Scala.js. This repository includes examples :
-- commands
-- inline completions
-- code actions
-- language-client integration (plaintext completions and uppercase-word diagnostics)
-- syntax highlighting
+This repository is a work-in-progress migration of
+[agda-mode-vscode](https://github.com/banacorn/agda-mode-vscode) to Scala.js.
+The goal is to bring the extension's Agda editing features to a Scala.js
+implementation; this project is not yet a feature-complete replacement.
 
-WIP:
-- language configuration(Comment toggling,Brackets definition,etc)
+## Status
+
+The Scala.js extension currently provides examples and infrastructure for:
+
+- VS Code commands, code actions, inline completions, and status-bar items
+- A sample semantic token provider that highlights `TODO` in Scala files
+- A sample language client for Plain Text documents, with completions and
+  uppercase-word diagnostics
+- Configuration, file and network I/O, and VS Code API facades
+
+Agda-specific functionality from the original extension, such as Agda language
+server integration and Unicode input, has not yet been migrated.
+
 ## Get started
 
-Requirements: [Node.js/npm](https://nodejs.org/) and [sbt](https://www.scala-sbt.org/).
+Requirements: [Node.js/npm](https://nodejs.org/), [sbt](https://www.scala-sbt.org/),
+and VS Code with the `code` command available on your `PATH`. The
+[Metals](https://scalameta.org/metals/) extension is recommended for Scala
+development.
 
 1. Clone the repository and open it in VS Code. Let Metals import the sbt build.
-2. Run `sbt open` in the project root. This compiles the extension and opens a
-   VS Code Extension Development Host. The first run may take a while.
-3. In the new window, open the Command Palette, run **Hello World**, and
-   confirm the notification appears.
-4. To try the language server, open a Plain Text document, type `AAA`, and
-   confirm the warning appears. Request completion to see TypeScript and
+2. Run `sbt open` from the project root. This compiles the extension, prepares
+   its output, and opens a VS Code Extension Development Host. The first run may
+   take a while.
+3. In the new window, open the Command Palette and run **Hello World**.
+4. To try the language-server example, open a Plain Text document, type `AAA`,
+   and confirm the warning appears. Request completion to see TypeScript and
    JavaScript suggestions.
 
 ## Build and package
 
-Compile the extension and prepare its language server:
+Compile the Scala.js extension and prepare its language-server files:
+
 ```bash
 sbt fastOptJS prepareExtension
 ```
 
-To create a `.vsix` package:
+To package the extension as a `.vsix` (with `vsce` available through `npx`):
+
 ```bash
-cd out &&  npx vsce package
+cd out && npx vsce package
 ```
 
 ## Testing
 
-Run the MUnit tests with `sbt test`. They compile to JavaScript and run under Node.js. The VS Code runtime module `vscode` is provided by the extension host, not by the `@types/vscode` typings in `build.sbt`, so tests that load extension code can fail under Node with `Cannot find module 'vscode'`. The extension host is available when launching the development window with `sbt open`.
+Run the MUnit tests with `sbt test`. They compile to JavaScript and run under
+Node.js. The VS Code runtime module `vscode` is provided by the extension host,
+not by the `@types/vscode` typings in `build.sbt`; tests that load extension
+code using VS Code APIs therefore need an extension-host test runner.
 
-For tests that need VS Code APIs, use an extension-host test runner. The [Agda extension](https://github.com/banacorn/agda-mode-vscode) launches VS Code with `@vscode/test-electron`; [Metals](https://github.com/scalameta/metals-vscode) separates Node unit tests from extension-host tests. Keep pure logic in unit tests and test VS Code integration in the host.
+For examples, the [Agda extension](https://github.com/banacorn/agda-mode-vscode)
+uses `@vscode/test-electron`, while
+[Metals](https://github.com/scalameta/metals-vscode) separates Node unit tests
+from extension-host tests. Keep pure logic in unit tests and test VS Code
+integration in the host.
 
-## Usage
-### Use it as a template
-click on the `Use this template` button to create a new repository with the same structure in github.
+## Project layout
 
-### Use it as sbt dependency
-In your `build.sbt` add the following:
-```scala
-lazy val vsc = RootProject(uri("https://github.com/doofin/vscode-scalajs-hello.git")) 
-lazy val root = Project("root", file(".")) dependsOn(vsc)
-```
+- `src/main/scala/vscextension/` — Scala.js extension entry point and VS Code
+  feature examples
+- `src/main/scala/vscextension/facade/` — VS Code and language-client facades
+- `src/main/scala/vscextension/io/` — configuration, file, and network helpers
+- `server/` — Node.js language-server example
+- `build.sbt` — Scala.js, ScalablyTyped, and npm dependency configuration
 
-### Use it as a library
-**Currently not working** due to jitpack missing npm! Welcome to contribute to fix it.
+The original extension is available at
+[banacorn/agda-mode-vscode](https://github.com/banacorn/agda-mode-vscode).
+`src-ref/` is a local reference checkout and is excluded from version control.
 
-You can use this project as a library in your project by adding the following to your `build.sbt`:
-```scala
-resolvers += Resolver.bintrayRepo("jitpack", "https://jitpack.io")
-libraryDependencies += "com.github.doofin" % "vscode-scalajs-hello" % "master-SNAPSHOT" // might be wrong
-```
+## Scala.js and VS Code APIs
 
-You can find the latest version on
-[jitpack.](https://jitpack.io/#doofin/vscode-scalajs-hello)
+VS Code APIs are available through the generated ScalablyTyped facade:
 
-Note: 
- - I recommend using the Metals extension for Scala in VSCode.
- - If you have any issues, please open an issue on this repository.
-
-## Project structure
-The project file structure in src/main/scala is as follows:
-```bash
-src/main/scala
-├── extensionMain.scala // main entry point for the extension
-├── commands.scala, codeActions.scala,etc // files for different extension features
-│   ├── facade // facade for extra vscode api
-│   ├── io // file and network io functions
-```
-
-
-The project uses the following tools:
-* [SBT] build tool for building the project
-* [Scala.js] for general coding
-* [Scalably Typed] for JavaScript facades
-* [scalajs-bundler] for bundling the JavaScript dependencies
-
-SBT is configured with the `build.sbt` file. Scala.js, ScalablyTyped and the bundler are SBT plugins. With these, SBT manages your JavaScript `npm` dependencies. You should never have to run `npm` directly, simply edit the `npmDependencies` settings in `build.sbt`.
-
-[accessible-scala]: https://marketplace.visualstudio.com/items?itemName=scala-center.accessible-scala
-[helloworld-minimal-sample]: https://github.com/Microsoft/vscode-extension-samples/tree/master/helloworld-minimal-sample
-[Scalably Typed]: https://github.com/ScalablyTyped/Converter
-[SBT]: https://www.scala-sbt.org
-[ScalaJS]: http://www.scala-js.org
-[scalajs-bundler]: https://github.com/scalacenter/scalajs-bundler
-
-## How to code in Scala js?
-
-In general, javascript functions and classes can be used in the same way as in JS/TS!
-If the typechecker disagrees, you can insert casts with `.asInstanceOf[Type]`.
-
-The JS types (like `js.Array`) are available from
-```scala
-import scala.scalajs.js
-```
-
-The VSCode classes and functions are available from
 ```scala
 import typings.vscode.mod as vscode
 
-vscode.window.showInformationMessage("Hello World!")
+vscode.window.showInformationMessage("Hello from Scala.js!")
 ```
 
-Some additional types are available in the `anon` subpackage, for example:
-```scala
-import typings.vscode.anon.Dispose
-// register a command. The cast is necessary due to typescript conversion limitations.
-vscode.commands.registerCommand(name, fun).asInstanceOf[Dispose]
-```
+Scala.js JavaScript types are available from `scala.scalajs.js`. Prefer the
+generated API types; use `.asInstanceOf[Type]` only where a generated facade
+does not express the VS Code API accurately.
 
-You can find more information and tutorials on the [Scala.js website](https://www.scala-js.org/).
+## Contributing
 
-# references:
- - original [vscode-scalajs-hello](https://github.com/pme123/vscode-scalajs-hello) with Scala 3.3.3 and sbt.version=1.9.7.
- - [VSCode Extension Samples](https://github.com/microsoft/vscode-extension-samples) repository.
- - [visualstudio.com/api/get-started](https://code.visualstudio.com/api/get-started/your-first-extension) in typescript.
- - [scalablytyped.com](https://scalablytyped.org/docs/plugin) for the typing plugin.
- - [scala js](https://www.scala-js.org/doc/project/) for the scala.js project.
+Contributions toward migrating Agda-mode features are welcome. Keep pure logic
+separate from VS Code API integration so it can be tested under Node.js, and add
+extension-host tests for behavior that requires VS Code.
 
-# contribute
+Useful references:
 
-Welcome to contribute to this project! Here are some ideas:
-- Add more examples for vscode extension features.
-- Add github actions for automatic release 
-- Add extension-host integration tests.
+- [Agda mode for VS Code](https://github.com/banacorn/agda-mode-vscode)
+- [Agda Language Server](https://github.com/agda/agda-language-server)
+- [VS Code Extension API](https://code.visualstudio.com/api)
+- [Scala.js](https://www.scala-js.org/)
+- [ScalablyTyped](https://scalablytyped.org/)
