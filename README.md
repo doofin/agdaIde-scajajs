@@ -15,9 +15,13 @@ The first MVP slice now provides:
   `agda` LSP request handshake, or Agda via `agda --interaction` and its prompt
 
 This is only a connection and syntax-highlighting MVP, not feature parity. The
-Scala.js extension does not yet send Agda interaction commands, consume
-highlighting responses from the server, or support literate Agda files,
-downloads, Unicode input, and goal operations.
+Scala.js extension currently supports basic Load and Compile commands, with raw
+server output in the **Agda** Output channel and VS Code messages reporting
+command outcomes. For direct Agda connections, Load also converts Agda's
+highlight annotations into VS Code semantic tokens. ALS semantic-token
+decoding and highlight decorations are not implemented yet.
+Literate Agda files, automatic server downloads, Unicode input, and goal
+operations are also still pending.
 
 ## Get started
 
@@ -36,8 +40,9 @@ development.
    Executable names can be overridden with `agdaMode.connection.agdaPath` and
    `agdaMode.connection.alsPath`. If VS Code cannot find an executable that is
    available in your terminal, set its path to the executable's absolute path.
-5. To retry a failed connection, run **Agda: Connect to Server** from the
-   Command Palette while an Agda file is active.
+5. Run **Agda: Load** or **Agda: Compile** from the Command Palette. Use
+   **Agda: Connect to Server** to retry a failed connection and **Agda: Quit
+   Server** to stop it.
 
 ## Build and package
 

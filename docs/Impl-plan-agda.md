@@ -53,7 +53,7 @@ its lifecycle,
 serialization, and teardown behavior should be treated as requirements, not
 incidental implementation details.
 
-## Recommended steps
+## steps
 
 ### 1. Establish the extension contract
 

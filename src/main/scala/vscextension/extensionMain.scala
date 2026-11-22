@@ -10,6 +10,7 @@ object extensionMain {
     */
   @JSExportTopLevel("activate") // Exports the function to javascript so that VSCode can load it
   def activate(context: vscode.ExtensionContext): Unit = {
-    AgdaConnection.activate(context)
+    AgdaHighlighting.register(context)
+    AgdaClient.activate(context)
   }
 }

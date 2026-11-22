@@ -41,45 +41,24 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   `agda --interaction` and waits for its prompt. ALS currently requires an
   installed executable configured via `agdaMode.connection.alsPath`; automatic
   download is not implemented yet.
-- This milestone establishes connectivity only. Sending Agda commands,
-  processing server highlighting, literate Agda support, and the original
-  extension's remaining features are still pending.
+- Added initial Load, Compile, and Quit Server commands. Load and Compile send
+  Agda interaction requests to the direct process or ALS custom `agda` request;
+  raw server output is written to the **Agda** Output channel.
+- Direct Agda output now parses highlight-clear/add-annotations S-expressions
+  and publishes VS Code semantic tokens after Load. ALS highlighting,
+  diagnostics, literate Agda support, automatic server downloads, and the
+  original extension's remaining features are still pending.
 
-### Original ALS connection and download flow
-
-The original extension uses a broader fallback flow than the current MVP:
-
-1. `State__Connection.sendRequest` calls `Connection.makeWithFallback` when a
-   document first needs a server connection.
-2. The default `agdaMode.connection.paths` is `["agda", "als"]`. Candidates are
-   tried from last to first, so `als` is tried before `agda`. A candidate may be
-   a command found on `PATH` or a configured resource path. The extension probes
-   it to distinguish Agda from ALS before starting a connection.
-3. If all configured candidates fail, the extension checks persisted
-   `connection.downloadPolicy`. The default is `Undecided`, which prompts the
-   user; `Yes` permits download and `No` suppresses it. Thus first-run download
-   is automatic only after user consent, not an unconditional silent download.
-4. It first reuses a compatible managed download, otherwise resolves the
-   selected release channel (`dev` by default; `latest` is also supported) from
-   the `agda/agda-language-server` GitHub releases. The selected asset must
-   match the host platform. Native artifacts are supported on Windows, macOS
-   x64/arm64, and Ubuntu 24.04+ x86_64. Other hosts use a WASM artifact and
-   require `qbane.als-wasm-loader`.
-5. Downloads are stored under VS Code global storage in a release/artifact
-   directory. Native zip files are extracted and made executable. The resolved
-   binary is then passed to the language client as a process command; ALS is
-   initialized with its custom `agda` LSP request and `CmdReqSYN` payload.
-   Failed native downloads or startup can fall back to a matching WASM build
-   when its loader is available.
-6. On successful automatic fallback, the managed binary path is added to
-   `connection.paths` at lowest priority, so explicit user candidates remain
-   preferred on subsequent connections.
-
-The main reference points are `src/State/State__Connection.res`,
-`src/Connection/Connection__Core.res`,
-`src/Connection/Endpoint/Connection__Endpoint__ALS.res`,
-`src/Main/Desktop.res`, and `src/Connection/Download/`. These are in the local
-reference checkout; use the upstream repository if `src-ref/` is absent.
 
 2nd round instructions:
-- other necessary MVP features
+- other necessary MVP features like basic commands.
+- show a message for users for outcome of commands like Load and Compile
+
+2nd round result:
+- Added **Agda: Load**, **Agda: Compile**, and **Agda: Quit Server** commands
+  to the Command Palette for Agda documents.
+- Load and Compile now report completion through VS Code messages. Direct
+  Agda uses its status/error/compilation responses; ALS uses its command
+  response. Raw output remains available in the **Agda** Output channel.
+- Direct Agda highlight annotations are parsed for editor semantic tokens;
+  diagnostics and ALS highlighting are not implemented yet.

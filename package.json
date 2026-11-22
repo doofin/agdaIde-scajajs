@@ -26,60 +26,84 @@
     "contributes": {
         "languages": [
             {
-                    "id": "agda",
-                    "aliases": [
-                        "Agda"
-                    ],
-                    "extensions": [
-                        ".agda"
-                    ],
-                    "configuration": "./res/language-configuration.json"
+                "id": "agda",
+                "aliases": [
+                    "Agda"
+                ],
+                "extensions": [
+                    ".agda"
+                ],
+                "configuration": "./res/language-configuration.json"
             }
         ],
         "grammars": [
-                {
-                    "language": "agda",
-                    "scopeName": "source.agda",
-                    "path": "./res/agda.tmLanguage.json"
-                }
+            {
+                "language": "agda",
+                "scopeName": "source.agda",
+                "path": "./res/agda.tmLanguage.json"
+            }
         ],
         "configuration": {
-                "title": "Agda Mode (Scala.js)",
-                "properties": {
-                    "agdaMode.connection.backend": {
-                        "type": "string",
-                        "enum": [
-                            "als",
-                            "agda"
-                        ],
-                        "default": "agda",
-                        "description": "Server to connect to when an Agda file is opened."
-                    },
-                    "agdaMode.connection.alsPath": {
-                        "type": "string",
-                        "default": "als",
-                        "description": "Executable or command used to start the Agda Language Server."
-                    },
-                    "agdaMode.connection.agdaPath": {
-                        "type": "string",
-                        "default": "agda",
-                        "description": "Agda executable used with --interaction."
-                    }
+            "title": "Agda Mode (Scala.js)",
+            "properties": {
+                "agdaMode.connection.backend": {
+                    "type": "string",
+                    "enum": [
+                        "als",
+                        "agda"
+                    ],
+                    "default": "agda",
+                    "description": "Server to connect to when an Agda file is opened."
+                },
+                "agdaMode.connection.alsPath": {
+                    "type": "string",
+                    "default": "als",
+                    "description": "Executable or command used to start the Agda Language Server."
+                },
+                "agdaMode.connection.agdaPath": {
+                    "type": "string",
+                    "default": "agda",
+                    "description": "Agda executable used with --interaction."
                 }
+            }
         },
         "commands": [
-                {
-                    "command": "agda-mode.connect",
-                    "title": "Agda: Connect to Server"
-                }
+            {
+                "command": "agda-mode.connect",
+                "title": "Agda: Connect to Server"
+            },
+            {
+                "command": "agda-mode.load",
+                "title": "Agda: Load"
+            },
+            {
+                "command": "agda-mode.compile",
+                "title": "Agda: Compile"
+            },
+            {
+                "command": "agda-mode.quit",
+                "title": "Agda: Quit Server"
+            }
         ],
         "menus": {
-                "commandPalette": [
-                    {
-                        "command": "agda-mode.connect",
-                        "when": "editorLangId == agda"
-                    }
-                ]
+            "commandPalette": [
+                {
+                    "command": "agda-mode.connect",
+                    "when": "editorLangId == agda"
+                },
+                {
+                    "command": "agda-mode.load",
+                    "when": "editorLangId == agda"
+                },
+                {
+                    "command": "agda-mode.compile",
+                    "when": "editorLangId == agda"
+                },
+                {
+                    "command": "agda-mode.quit",
+                    "when": "editorLangId == agda"
+                }
+            ]
         }
     }
 }
