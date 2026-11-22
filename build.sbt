@@ -83,7 +83,9 @@ def prepareExtensionTask(): Def.Initialize[Task[Unit]] =
     val output = base / outdir
 
     IO.createDirectory(output / "server")
+    IO.createDirectory(output / "res")
     IO.copyFile(base / "package.json", output / "package.json")
+    IO.copyDirectory(base / "src" / "res", output / "res")
     IO.copyFile(base / "server" / "server.js", output / "server" / "server.js")
     mLog(s"Copied server.js to output directory: ${output.getAbsolutePath}")
 

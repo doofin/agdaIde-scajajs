@@ -7,16 +7,17 @@ implementation; this project is not yet a feature-complete replacement.
 
 ## Status
 
-The Scala.js extension currently provides examples and infrastructure for:
+The first MVP slice now provides:
 
-- VS Code commands, code actions, inline completions, and status-bar items
-- A sample semantic token provider that highlights `TODO` in Scala files
-- A sample language client for Plain Text documents, with completions and
-  uppercase-word diagnostics
-- Configuration, file and network I/O, and VS Code API facades
+- Agda syntax coloring and basic editor bracket/comment behavior for `.agda`
+  files
+- A configurable connection attempt on opening an Agda file: ALS via its
+  `agda` LSP request handshake, or Agda via `agda --interaction` and its prompt
 
-Agda-specific functionality from the original extension, such as Agda language
-server integration and Unicode input, has not yet been migrated.
+This is only a connection and syntax-highlighting MVP, not feature parity. The
+Scala.js extension does not yet send Agda interaction commands, consume
+highlighting responses from the server, or support literate Agda files,
+downloads, Unicode input, and goal operations.
 
 ## Get started
 
@@ -29,14 +30,18 @@ development.
 2. Run `sbt open` from the project root. This compiles the extension, prepares
    its output, and opens a VS Code Extension Development Host. The first run may
    take a while.
-3. In the new window, open the Command Palette and run **Hello World**.
-4. To try the language-server example, open a Plain Text document, type `AAA`,
-   and confirm the warning appears. Request completion to see TypeScript and
-   JavaScript suggestions.
+3. Open an `.agda` file. Agda syntax coloring is contributed by the extension.
+4. By default, the extension starts `agda --interaction` and waits for Agda's
+   prompt. To use ALS instead, set `agdaMode.connection.backend` to `als`.
+   Executable names can be overridden with `agdaMode.connection.agdaPath` and
+   `agdaMode.connection.alsPath`. If VS Code cannot find an executable that is
+   available in your terminal, set its path to the executable's absolute path.
+5. To retry a failed connection, run **Agda: Connect to Server** from the
+   Command Palette while an Agda file is active.
 
 ## Build and package
 
-Compile the Scala.js extension and prepare its language-server files:
+Compile the Scala.js extension:
 
 ```bash
 sbt fastOptJS prepareExtension

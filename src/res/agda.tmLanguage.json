@@ -1,0 +1,130 @@
+{
+    "scopeName": "source.agda",
+    "patterns": [
+        {
+            "include": "#pragma"
+        },
+        {
+            "include": "#block-comment"
+        },
+        {
+            "include": "#line-comment"
+        },
+        {
+            "include": "#string"
+        },
+        {
+            "include": "#hole"
+        },
+        {
+            "include": "#keyword"
+        },
+        {
+            "include": "#builtin"
+        },
+        {
+            "include": "#number"
+        },
+        {
+            "include": "#operator"
+        }
+    ],
+    "repository": {
+        "pragma": {
+            "name": "meta.preprocessor.agda",
+            "begin": "\\{-#",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.directive.agda"
+                }
+            },
+            "end": "#-\\}",
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.directive.agda"
+                }
+            }
+        },
+        "block-comment": {
+            "name": "comment.block.agda",
+            "begin": "\\{-",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.comment.begin.agda"
+                }
+            },
+            "end": "-\\}",
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.comment.end.agda"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#block-comment"
+                }
+            ]
+        },
+        "line-comment": {
+            "name": "comment.line.double-dash.agda",
+            "match": "--.*$",
+            "captures": {
+                "0": {
+                    "name": "punctuation.definition.comment.agda"
+                }
+            }
+        },
+        "string": {
+            "name": "string.quoted.double.agda",
+            "begin": "\"",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.agda"
+                }
+            },
+            "end": "\"",
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.agda"
+                }
+            },
+            "patterns": [
+                {
+                    "name": "constant.character.escape.agda",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "hole": {
+            "name": "meta.interaction-point.agda",
+            "begin": "\\{!",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.section.interaction-point.begin.agda"
+                }
+            },
+            "end": "!\\}",
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.section.interaction-point.end.agda"
+                }
+            }
+        },
+        "keyword": {
+            "name": "keyword.control.agda",
+            "match": "\\b(abstract|as|data|do|field|forall|hiding|import|in|inductive|instance|let|macro|module|mutual|open|overlap|pattern|postulate|primitive|private|public|record|renaming|rewrite|syntax|tactic|to|using|where|with)\\b"
+        },
+        "builtin": {
+            "name": "support.type.agda",
+            "match": "\\b(Set[0-9]*|Prop|Level|Setω)\\b"
+        },
+        "number": {
+            "name": "constant.numeric.agda",
+            "match": "\\b[0-9]+\\b"
+        },
+        "operator": {
+            "name": "keyword.operator.agda",
+            "match": "->|→|=>|⇒|≡|≢|≤|≥|∧|∨|×|⊎|[=:+*/<>|&!\\\\-]+"
+        }
+    }
+}
