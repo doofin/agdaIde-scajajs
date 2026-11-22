@@ -1,10 +1,11 @@
-package vscextension
+package vscextension.vsc
 import typings.vscode.mod as vscode
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 
-import facade.vscodeUtils.*
+import _root_.vscextension.facade.vscodeUtils.*
+import vscextension.vsc.jsUtils
 
 /** demonstrates how to provide inline completions in the editor. like the github copilot
   * https://github.com/microsoft/vscode-extension-samples/tree/main/inline-completions

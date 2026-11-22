@@ -1,8 +1,10 @@
-package vscextension
+package vscextension.vsc
 
 import scala.scalajs.js.annotation.JSExportTopLevel
 
 import typings.vscode.mod as vscode
+
+import _root_.vscextension.{AgdaClient, AgdaHighlighting}
 
 object extensionMain {
 
@@ -12,5 +14,6 @@ object extensionMain {
   def activate(context: vscode.ExtensionContext): Unit = {
     AgdaHighlighting.register(context)
     AgdaClient.activate(context)
+    CodeActions.registerCodeActions(context)
   }
 }

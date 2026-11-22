@@ -62,3 +62,15 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   response. Raw output remains available in the **Agda** Output channel.
 - Direct Agda highlight annotations are parsed for editor semantic tokens;
   diagnostics and ALS highlighting are not implemented yet.
+
+
+  3rd round instructions:
+- implement contextual features like case split, give(fill goal) with code actions
+- implement contextual features like hover, go-to-definition, and code actions for Agda files
+
+3rd round result:
+- Added Agda code actions for case splitting and giving an expression in a
+  loaded goal using the direct Agda backend. Give reuses a nonempty goal,
+  applies Agda's Give response, and requests highlighting for the inserted
+  expression without reloading the file. Hover and go-to-definition remain
+  pending; ALS goal actions are not supported yet.

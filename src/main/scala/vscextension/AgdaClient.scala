@@ -1,12 +1,20 @@
 package vscextension
 
 import scala.scalajs.js
+import scala.concurrent.ExecutionContext.Implicits.global
 
 import typings.vscode.mod as vscode
 
 import facade.vscodeUtils.*
 
 object AgdaClient {
+  private final case class PendingGoalAction(
+      name: String,
+      document: vscode.TextDocument,
+      goal: AgdaHighlighting.GoalLocation,
+      content: String
+  )
+
   private final class PendingCommand(val label: String, val successTitle: String) {
     var succeeded = false
     var errorMessage: Option[String] = None
@@ -20,6 +28,7 @@ object AgdaClient {
   private var pendingConnection: js.Promise[Unit] = js.Promise.resolve(())
   private var pendingCommand: Option[PendingCommand] = None
   private var commandOutput = ""
+  private var pendingGoalAction: Option[PendingGoalAction] = None
 
   private def setting(name: String, default: String): String =
     vscode.workspace
@@ -47,11 +56,215 @@ object AgdaClient {
   }
 
   private def escapedString(value: String): String =
-    value.replace("\\", "\\\\").replace("\"", "\\\"")
+    value
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+      .replace("\r\n", "\\r\\n")
+      .replace("\n", "\\n")
 
   private def interactionRequest(document: vscode.TextDocument, command: String): String = {
     val path = escapedString(document.uri.fsPath)
     s"""IOTCM "$path" NonInteractive Direct ( $command "$path" [] )""" + "\n"
+  }
+
+  private def withSavedDocument(document: vscode.TextDocument)(run: => Unit): Unit =
+    document
+      .save()
+      .`then`(
+        (saved: Boolean) => {
+          if (saved) run
+          else vscode.window.showErrorMessage("Could not save the Agda document.")
+          ()
+        },
+        (error: Any) => {
+          vscode.window.showErrorMessage(s"Could not save the Agda document: $error")
+          ()
+        }
+      )
+
+  private def codePointCount(text: String): Int = {
+    var offset = 0
+    var count = 0
+    while (offset < text.length) {
+      val char = text.charAt(offset)
+      if (
+        Character.isHighSurrogate(char) &&
+        offset + 1 < text.length &&
+        Character.isLowSurrogate(text.charAt(offset + 1))
+      ) offset += 2
+      else offset += 1
+      count += 1
+    }
+    count
+  }
+
+  private def agdaPosition(text: String, offset: Int): String = {
+    val prefix = text.substring(0, offset).replace("\r\n", "\n")
+    val lineBreak = prefix.lastIndexOf('\n')
+    val lineText = prefix.substring(lineBreak + 1)
+    val line = prefix.count(_ == '\n') + 1
+    s"(Pn () ${codePointCount(prefix) + 1} $line ${codePointCount(lineText) + 1})"
+  }
+
+  private def interactionRange(document: vscode.TextDocument, goal: AgdaHighlighting.GoalLocation): String = {
+    val start = if (goal.braced) goal.start + 2 else goal.start
+    val end = if (goal.braced) goal.end - 2 else goal.end
+    agdaRange(document, start, end)
+  }
+
+  private def agdaRange(document: vscode.TextDocument, start: Int, end: Int): String = {
+    val text = document.getText()
+    val filepath = escapedString(document.uri.fsPath)
+    s"(intervalsToRange (Just (mkAbsolute \"$filepath\")) [Interval () ${agdaPosition(text, start)} ${agdaPosition(text, end)}])"
+  }
+
+  private def highlightRequest(
+      document: vscode.TextDocument,
+      index: Int,
+      start: Int,
+      end: Int
+  ): String = {
+    val range = agdaRange(document, start, end)
+    val content = document
+      .getText(new vscode.Range(document.positionAt(start), document.positionAt(end)))
+      .replace("\r\n", "\n")
+    s"""IOTCM "${escapedString(document.uri.fsPath)}" Interactive Direct ( Cmd_highlight $index $range "${escapedString(content)}" )""" + "\n"
+  }
+
+  def caseSplitAtCursor(): Unit = runGoalAction("Case split")
+
+  def giveAtCursor(): Unit = runGoalAction("Give")
+
+  def runGoalAction(name: String): Unit =
+    vscode.window.activeTextEditor.toOption match {
+      case None => vscode.window.showErrorMessage("Open an Agda file first.")
+      case Some(editor) if !isAgda(editor.document) =>
+        vscode.window.showErrorMessage("The active document is not an Agda file.")
+      case Some(editor) =>
+        val document = editor.document
+        withSavedDocument(document) {
+          val offset = document.offsetAt(editor.selection.active).toInt
+          AgdaHighlighting.goalAt(document, offset) match {
+            case None =>
+              vscode.window.showErrorMessage("Move the cursor into a loaded Agda goal first.")
+            case Some(goal) =>
+              if (goal.content.nonEmpty) {
+                sendGoalAction(name, document, goal, goal.content)
+              } else {
+                val options = vscode
+                  .InputBoxOptions()
+                  .setPrompt(if (name == "Case split") "Variable(s) to case split" else "Expression to give")
+                  .setPlaceHolder(if (name == "Case split") "x" else "expression")
+                vscode.window.showInputBox(options).toFuture.foreach { input =>
+                  input.toOption.foreach { content =>
+                    sendGoalAction(name, document, goal, content)
+                  }
+                }
+              }
+          }
+        }
+    }
+
+  private def sendGoalAction(
+      name: String,
+      document: vscode.TextDocument,
+      goal: AgdaHighlighting.GoalLocation,
+      content: String
+  ): Unit = {
+    if (!connected || !activeAgdaProcess.isDefined) {
+      vscode.window.showErrorMessage("Case split and Give require a connected direct Agda backend.")
+    } else if (pendingCommand.isDefined || pendingGoalAction.isDefined) {
+      vscode.window.showInformationMessage("An Agda command is already running.")
+    } else {
+      val command =
+        if (name == "Case split") s"Cmd_make_case ${goal.index}"
+        else s"Cmd_give WithoutForce ${goal.index}"
+      val request =
+        s"""IOTCM "${escapedString(document.uri.fsPath)}" NonInteractive Direct ( $command ${interactionRange(
+            document,
+            goal
+          )} "${escapedString(content.replace("\r\n", "\n"))}" )""" + "\n"
+      pendingGoalAction = Some(PendingGoalAction(name, document, goal, content))
+      outputChannel.foreach(_.show(true))
+      activeAgdaProcess.get
+        .selectDynamic("stdin")
+        .applyDynamic("write")(request)
+    }
+  }
+
+  private def applyGoalEdit(
+      document: vscode.TextDocument,
+      range: vscode.Range,
+      replacement: String,
+      reload: Boolean
+  ): Unit = {
+    val edit = new vscode.WorkspaceEdit()
+    edit.replace(document.uri, range, replacement)
+    vscode.workspace
+      .applyEdit(edit)
+      .`then`((applied: Boolean) => {
+        if (applied && reload) {
+          withSavedDocument(document) {
+            sendCommand(interactionRequest(document, "Cmd_load"), "Load", "")
+          }
+        } else if (!applied) vscode.window.showErrorMessage("Agda could not apply the code action.")
+        ()
+      })
+  }
+
+  private def applyGiveEdit(action: PendingGoalAction, replacement: String): Unit = {
+    val document = action.document
+    val range = new vscode.Range(
+      document.positionAt(action.goal.start),
+      document.positionAt(action.goal.end)
+    )
+    val filledStart = action.goal.start
+    val filledEnd = filledStart + replacement.length
+    val edit = new vscode.WorkspaceEdit()
+    edit.replace(document.uri, range, replacement)
+    vscode.workspace
+      .applyEdit(edit)
+      .`then`((applied: Boolean) => {
+        if (applied) {
+          withSavedDocument(document) {
+            if (connected && activeAgdaProcess.isDefined) {
+              activeAgdaProcess.get
+                .selectDynamic("stdin")
+                .applyDynamic("write")(
+                  highlightRequest(document, action.goal.index, filledStart, filledEnd)
+                )
+            } else {
+              vscode.window.showErrorMessage(
+                "Agda disconnected before it could highlight the filled goal."
+              )
+            }
+          }
+        } else {
+          vscode.window.showErrorMessage("Agda could not apply the filled goal.")
+        }
+        ()
+      })
+  }
+
+  private def completeCaseSplit(action: PendingGoalAction, lines: Vector[String]): Unit = {
+    pendingGoalAction = None
+    if (lines.isEmpty) {
+      vscode.window.showErrorMessage("Agda returned no case-split clauses.")
+    } else {
+      val startLine = action.document.positionAt(action.goal.start).line.toInt
+      val endLine = action.document.positionAt(action.goal.end).line.toInt
+      val firstLine = action.document.lineAt(startLine)
+      val lastLine = action.document.lineAt(endLine)
+      val indentation = firstLine.text.takeWhile(char => char == ' ' || char == '\t')
+      val replacement = indentation + lines.mkString("\n" + indentation)
+      val range = new vscode.Range(firstLine.range.start, lastLine.range.end)
+      applyGoalEdit(action.document, range, replacement, reload = true)
+    }
+  }
+
+  private def completeGive(action: PendingGoalAction, replacement: String): Unit = {
+    pendingGoalAction = None
+    applyGiveEdit(action, replacement)
   }
 
   private def sendCommand(request: String, label: String, successTitle: String): Unit = {
@@ -82,18 +295,20 @@ object AgdaClient {
       case Some(editor) if !isAgda(editor.document) =>
         vscode.window.showErrorMessage("The active document is not an Agda file.")
       case Some(editor) =>
-        val request =
-          if (compile)
-            interactionRequest(editor.document, "Cmd_compile GHCNoMain")
-          else
-            interactionRequest(editor.document, "Cmd_load")
-        val label = if (compile) "Compile" else "Load"
-        val successTitle = if (compile) "*Compilation result*" else ""
-        if (!compile) AgdaHighlighting.clear(editor.document)
-        connect(context, editor.document).`then`((_: Unit) => {
-          if (connected) sendCommand(request, label, successTitle)
-          ()
-        })
+        withSavedDocument(editor.document) {
+          val request =
+            if (compile)
+              interactionRequest(editor.document, "Cmd_compile GHCNoMain")
+            else
+              interactionRequest(editor.document, "Cmd_load")
+          val label = if (compile) "Compile" else "Load"
+          val successTitle = if (compile) "*Compilation result*" else ""
+          if (!compile) AgdaHighlighting.clear(editor.document)
+          connect(context, editor.document).`then`((_: Unit) => {
+            if (connected) sendCommand(request, label, successTitle)
+            ()
+          })
+        }
     }
   }
 
@@ -166,12 +381,30 @@ object AgdaClient {
             pendingCommand.foreach { command =>
               if (command.label == "Load") command.succeeded = true
             }
-          case AgdaHighlighting.InfoEvent("*Error*", message) =>
+          case AgdaHighlighting.InfoEvent(title, message) if title == "*Error*" || title.contains("Errors") =>
             pendingCommand.foreach(_.errorMessage = Some(message))
+            pendingGoalAction.foreach { action =>
+              pendingGoalAction = None
+              vscode.window.showErrorMessage(s"Agda ${action.name} failed: $message")
+            }
           case AgdaHighlighting.InfoEvent(title, _) =>
             pendingCommand.foreach { command =>
               if (title == command.successTitle) command.succeeded = true
             }
+          case AgdaHighlighting.MakeCaseEvent(lines) =>
+            pendingGoalAction.filter(_.name == "Case split").foreach(action => completeCaseSplit(action, lines))
+          case AgdaHighlighting.GiveParenEvent(index) =>
+            pendingGoalAction
+              .filter(action => action.name == "Give" && action.goal.index == index)
+              .foreach(action => completeGive(action, s"(${action.content})"))
+          case AgdaHighlighting.GiveNoParenEvent(index) =>
+            pendingGoalAction
+              .filter(action => action.name == "Give" && action.goal.index == index)
+              .foreach(action => completeGive(action, action.content))
+          case AgdaHighlighting.GiveStringEvent(index, content) =>
+            pendingGoalAction
+              .filter(action => action.name == "Give" && action.goal.index == index)
+              .foreach(action => completeGive(action, content))
           case _ => ()
         }
         outputChannel.foreach(_.append(text))

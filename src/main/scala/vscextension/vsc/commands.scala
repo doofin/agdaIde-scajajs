@@ -1,11 +1,11 @@
-package vscextension
+package vscextension.vsc
 
 import typings.vscode.mod as vscode
 
 import scala.collection.immutable
 import scala.scalajs.js
 
-import facade.vscodeUtils.*
+import _root_.vscextension.facade.vscodeUtils.*
 
 /** Commands are actions that a user can invoke in the vscode extension with command palette (ctrl+shift+p).
   *

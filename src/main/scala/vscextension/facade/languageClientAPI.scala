@@ -4,6 +4,7 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 
 import typings.vscode.mod as vscode
+import scala.annotation.unused
 
 object languageClientAPI {
   @js.native
@@ -41,15 +42,12 @@ object languageClientAPI {
   }
 
   object DocumentFilter {
-    def plainTextFile: vscode.DocumentFilter =
+    def apply(scheme: String, language: String): vscode.DocumentFilter = {
       js.Dynamic
-        .literal(scheme = "file", language = "plaintext")
+        .literal(scheme = scheme, language = language)
         .asInstanceOf[vscode.DocumentFilter]
+    }
 
-    def agda: vscode.DocumentFilter =
-      js.Dynamic
-        .literal(scheme = "file", language = "agda")
-        .asInstanceOf[vscode.DocumentFilter]
   }
 
   @js.native
@@ -80,10 +78,10 @@ object languageClientAPI {
   @js.native
   @JSImport("vscode-languageclient/node", "LanguageClient")
   class LanguageClient(
-      id: String,
-      name: String,
-      serverOptions: ServerOptions,
-      clientOptions: LanguageClientOptions
+      @unused id: String,
+      @unused name: String,
+      @unused serverOptions: ServerOptions,
+      @unused clientOptions: LanguageClientOptions
   ) extends js.Object {
     def start(): js.Promise[Unit] = js.native
     def stop(): js.Promise[Unit] = js.native

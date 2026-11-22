@@ -1,10 +1,10 @@
-package vscextension
+package vscextension.vsc
 
 import scala.scalajs.js
 
 import typings.vscode.mod as vscode
 
-import facade.vscodeUtils.*
+import _root_.vscextension.facade.vscodeUtils.*
 
 /* Syntax highlighting for TODO comments in Scala files
 

@@ -1,4 +1,4 @@
-package vscextension
+package vscextension.vsc
 import typings.vscodePromptTsx.mod.*
 import typings.vscodePromptTsx.distBasePromptElementsMod.ChatMessageProps
 

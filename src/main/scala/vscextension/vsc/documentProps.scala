@@ -1,9 +1,9 @@
-package vscextension
+package vscextension.vsc
 
 import typings.vscode.mod as vscode
 import typings.vscode.mod.TextEditor
 
-import facade.vscodeUtils.*
+import _root_.vscextension.facade.vscodeUtils.*
 
 object documentProps {
 

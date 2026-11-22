@@ -1,10 +1,10 @@
-package vscextension
+package vscextension.vsc
 
 import scala.scalajs.js
 
 import typings.vscode.mod as vscode
 
-import facade.languageClientAPI.{
+import _root_.vscextension.facade.languageClientAPI.{
   DocumentFilter,
   LanguageClient,
   LanguageClientOptions,
@@ -13,7 +13,7 @@ import facade.languageClientAPI.{
   Trace,
   TransportKind
 }
-import facade.vscodeUtils.*
+import _root_.vscextension.facade.vscodeUtils.*
 
 /** LSP client example: connects over IPC to provide Plain Text completions and uppercase-word diagnostics. */
 object lsp {
@@ -34,7 +34,7 @@ object lsp {
     )
 
     val clientOptions = LanguageClientOptions(
-      documentSelector = js.Array(DocumentFilter.plainTextFile),
+      documentSelector = js.Array(DocumentFilter("file", "plaintext")),
       outputChannel = outputChannel,
       traceOutputChannel = outputChannel
     )

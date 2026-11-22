@@ -11,6 +11,13 @@ object AgdaHighlighting {
   sealed trait ServerEvent
   case class StatusEvent(checked: Boolean) extends ServerEvent
   case class InfoEvent(title: String, message: String) extends ServerEvent
+  case class GoalIndicesEvent(indices: Vector[Int]) extends ServerEvent
+  case class MakeCaseEvent(lines: Vector[String]) extends ServerEvent
+  case class GiveParenEvent(index: Int) extends ServerEvent
+  case class GiveNoParenEvent(index: Int) extends ServerEvent
+  case class GiveStringEvent(index: Int, content: String) extends ServerEvent
+
+  case class GoalLocation(index: Int, start: Int, end: Int, content: String, braced: Boolean)
 
   private sealed trait Sexp
   private case class Atom(value: String) extends Sexp
@@ -65,6 +72,8 @@ object AgdaHighlighting {
 
   private val highlights = mutable.Map.empty[String, Vector[Highlight]]
   private val streams = mutable.Map.empty[String, SexpStream]
+  private val goalIndices = mutable.Map.empty[String, Vector[Int]]
+  private val goalHoleCounts = mutable.Map.empty[String, Int]
   private var changeEmitter: Option[vscode.EventEmitter[Unit]] = None
 
   private final class SexpStream {
@@ -203,29 +212,150 @@ object AgdaHighlighting {
     case _ => None
   }
 
+  private val responseTags = Set(
+    "agda2-highlight-clear",
+    "agda2-highlight-add-annotations",
+    "agda2-status-action",
+    "agda2-info-action",
+    "agda2-info-action-and-copy",
+    "agda2-goals-action",
+    "agda2-make-case-action",
+    "agda2-make-case-action-extendlam",
+    "agda2-give-action"
+  )
+
+  private def responseList(value: Sexp): Option[List[Sexp]] = value match {
+    case ListValue(items @ Atom(tag) :: _) if responseTags.contains(tag) => Some(items)
+    case ListValue(items) =>
+      items.iterator.map(responseList).collectFirst { case Some(response) => response }
+    case _ => None
+  }
+
+  private def integerAtoms(value: Sexp): List[Int] = value match {
+    case Atom(atom)       => atom.toIntOption.toList
+    case ListValue(items) => items.flatMap(integerAtoms)
+    case Text(_)          => Nil
+  }
+
+  private def strings(value: Sexp): List[String] = value match {
+    case Atom(atom) if atom != "." => List(atom)
+    case Text(text)                => List(text)
+    case ListValue(items)          => items.flatMap(strings)
+    case _                         => Nil
+  }
+
   private def parseEvent(expression: String): Option[ParsedResponse] =
-    new SexpParser(expression).parse() match {
-      case Some(ListValue(Atom("agda2-highlight-clear") :: _)) =>
+    new SexpParser(expression).parse().flatMap(responseList) match {
+      case Some(Atom("agda2-highlight-clear") :: _) =>
         Some(ParsedResponse(Some(false -> Vector.empty), None))
-      case Some(ListValue(Atom("agda2-highlight-add-annotations") :: mode :: values)) =>
+      case Some(Atom("agda2-highlight-add-annotations") :: mode :: values) =>
         val replace = mode == Atom("remove")
         val tokens = values.flatMap(parseHighlight).toVector
         Some(ParsedResponse(Some(replace -> tokens), None))
-      case Some(ListValue(Atom("agda2-status-action") :: Text(status) :: _)) =>
+      case Some(Atom("agda2-status-action") :: Text(status) :: _) =>
         Some(ParsedResponse(None, Some(StatusEvent(status.split(",").contains("Checked")))))
-      case Some(ListValue(Atom(tag) :: Text(title) :: Text(message) :: _))
+      case Some(Atom(tag) :: Text(title) :: Text(message) :: _)
           if tag == "agda2-info-action" || tag == "agda2-info-action-and-copy" =>
         Some(ParsedResponse(None, Some(InfoEvent(title, message))))
+      case Some(Atom("agda2-goals-action") :: goals :: _) =>
+        Some(ParsedResponse(None, Some(GoalIndicesEvent(integerAtoms(goals).toVector))))
+      case Some(Atom("agda2-make-case-action") :: cases :: _) =>
+        Some(ParsedResponse(None, Some(MakeCaseEvent(strings(cases).toVector))))
+      case Some(Atom("agda2-make-case-action-extendlam") :: cases :: _) =>
+        Some(ParsedResponse(None, Some(MakeCaseEvent(strings(cases).toVector))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Atom("paren") :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveParenEvent(i))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Text("paren") :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveParenEvent(i))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Atom("no-paren") :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveNoParenEvent(i))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Text("no-paren") :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveNoParenEvent(i))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Atom(content) :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveStringEvent(i, content))))
+      case Some(Atom("agda2-give-action") :: Atom(index) :: Text(content) :: _) =>
+        index.toIntOption.map(i => ParsedResponse(None, Some(GiveStringEvent(i, content))))
       case _ => None
     }
 
+  private def holes(text: String): Vector[(Int, Int, String, Boolean)] = {
+    val result = Vector.newBuilder[(Int, Int, String, Boolean)]
+    var index = 0
+    while (index < text.length) {
+      if (text.startsWith("--", index)) {
+        val lineEnd = text.indexOf('\n', index)
+        index = if (lineEnd < 0) text.length else lineEnd + 1
+      } else if (text.startsWith("{-", index)) {
+        var depth = 1
+        index += 2
+        while (index < text.length && depth > 0) {
+          if (text.startsWith("{-", index)) {
+            depth += 1
+            index += 2
+          } else if (text.startsWith("-}", index)) {
+            depth -= 1
+            index += 2
+          } else index += 1
+        }
+      } else if (text.charAt(index) == '"') {
+        index += 1
+        var escaped = false
+        var closed = false
+        while (index < text.length && !closed) {
+          val char = text.charAt(index)
+          index += 1
+          if (escaped) escaped = false
+          else if (char == '\\') escaped = true
+          else if (char == '"') closed = true
+        }
+      } else if (text.startsWith("{!", index)) {
+        val contentStart = index + 2
+        val close = text.indexOf("!}", contentStart)
+        if (close < 0) return result.result()
+        result += ((index, close + 2, text.substring(contentStart, close).trim, true))
+        index = close + 2
+      } else if (text.charAt(index) == '?') {
+        result += ((index, index + 1, "", false))
+        index += 1
+      } else index += 1
+    }
+    result.result()
+  }
+
+  def goalAt(document: vscode.TextDocument, offset: Int): Option[GoalLocation] = {
+    val uri = document.uri.toString
+    val documentHoles = holes(document.getText())
+    goalIndices.get(uri)
+      .flatMap { indices =>
+        documentHoles.zip(indices).collectFirst {
+          case ((start, end, content, braced), index) if start <= offset && offset <= end =>
+            GoalLocation(index, start, end, content, braced)
+        }
+      }
+  }
+
   private def notifyChanged(): Unit = changeEmitter.foreach(_.fire(()))
 
-  def clear(document: vscode.TextDocument): Unit = {
-    val uri = document.uri.toString
+  private def clearHighlights(uri: String): Unit = {
     highlights.remove(uri)
     streams.get(uri).foreach(_.clear())
     notifyChanged()
+  }
+
+  def clear(document: vscode.TextDocument): Unit = {
+    val uri = document.uri.toString
+    goalIndices.remove(uri)
+    goalHoleCounts.remove(uri)
+    clearHighlights(uri)
+  }
+
+  private def documentChanged(document: vscode.TextDocument): Unit = {
+    val uri = document.uri.toString
+    clearHighlights(uri)
+    if (goalHoleCounts.get(uri).exists(_ != holes(document.getText()).length)) {
+      goalIndices.remove(uri)
+      goalHoleCounts.remove(uri)
+    }
   }
 
   def consume(document: vscode.TextDocument, text: String): Vector[ServerEvent] = {
@@ -244,7 +374,12 @@ object AgdaHighlighting {
           highlights.update(uri, merged)
           changed = true
         }
-        response.serverEvent.foreach(events += _)
+        response.serverEvent.foreach {
+          case GoalIndicesEvent(indices) =>
+            goalIndices.update(uri, indices)
+            goalHoleCounts.update(uri, holes(document.getText()).length)
+          case event => events += event
+        }
       }
     }
     if (changed) notifyChanged()
@@ -327,7 +462,7 @@ object AgdaHighlighting {
     context.pushDisposable(new vscode.Disposable(() => emitter.dispose()))
     context.pushDisposable(
       vscode.workspace.onDidChangeTextDocument(
-        (event: vscode.TextDocumentChangeEvent) => clear(event.document),
+        (event: vscode.TextDocumentChangeEvent) => documentChanged(event.document),
         js.undefined,
         js.undefined
       )

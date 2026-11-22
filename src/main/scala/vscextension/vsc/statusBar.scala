@@ -1,4 +1,4 @@
-package vscextension
+package vscextension.vsc
 import typings.vscode.mod as vscode
 import vscextension.facade.vscodeUtils.*
 

@@ -27,7 +27,7 @@ object AgdaLsp {
     )
     val serverOptions = ServerOptions(run = command, debug = command)
     val clientOptions = LanguageClientOptions(
-      documentSelector = js.Array(DocumentFilter.agda),
+      documentSelector = js.Array(DocumentFilter("file", "agda")),
       outputChannel = output,
       initializationOptions = js.Dynamic.literal(commandLineOptions = js.Array[String]())
     )

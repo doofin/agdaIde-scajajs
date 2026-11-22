@@ -1,4 +1,4 @@
-package vscextension
+package vscextension.vsc
 import scala.scalajs.js
 import typings.vscode.mod as vscode
 /* an example of a webview in vscode which can show arbitrary html content

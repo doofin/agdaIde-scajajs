@@ -1,4 +1,4 @@
-package vscextension
+package vscextension.vsc
 
 import scala.scalajs.js
 

@@ -1,4 +1,4 @@
-package vscextension
+package vscextension.vsc
 
 /** Context menu, this shows when you right click on the editor, or explorer, etc.
   *
