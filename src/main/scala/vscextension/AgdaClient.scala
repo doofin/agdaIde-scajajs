@@ -5,6 +5,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 
 import typings.vscode.mod as vscode
 
+import vscextension.io.process
 import facade.vscodeUtils.*
 
 object AgdaClient {
@@ -23,12 +24,13 @@ object AgdaClient {
   private var connecting = false
   private var connected = false
   private var stopConnection: () => Unit = () => ()
-  private var activeAgdaProcess: js.UndefOr[js.Dynamic] = js.undefined
+  private var activeAgdaProcess: js.UndefOr[process.ChildProcess] = js.undefined
   private var outputChannel: js.UndefOr[vscode.OutputChannel] = js.undefined
   private var pendingConnection: js.Promise[Unit] = js.Promise.resolve(())
   private var pendingCommand: Option[PendingCommand] = None
   private var commandOutput = ""
   private var pendingGoalAction: Option[PendingGoalAction] = None
+  private var goalActionOutput = ""
 
   private def setting(name: String, default: String): String =
     vscode.workspace
@@ -128,14 +130,20 @@ object AgdaClient {
     val content = document
       .getText(new vscode.Range(document.positionAt(start), document.positionAt(end)))
       .replace("\r\n", "\n")
-    s"""IOTCM "${escapedString(document.uri.fsPath)}" Interactive Direct ( Cmd_highlight $index $range "${escapedString(content)}" )""" + "\n"
+    s"""IOTCM "${escapedString(document.uri.fsPath)}" Interactive Direct ( Cmd_highlight $index $range "${escapedString(
+        content
+      )}" )""" + "\n"
   }
 
   def caseSplitAtCursor(): Unit = runGoalAction("Case split")
 
   def giveAtCursor(): Unit = runGoalAction("Give")
 
-  def runGoalAction(name: String): Unit =
+  def autoSimplifiedAtCursor(): Unit = runGoalAction("Auto (Simplified)", promptWhenEmpty = false)
+
+  def runGoalAction(name: String): Unit = runGoalAction(name, promptWhenEmpty = true)
+
+  private def runGoalAction(name: String, promptWhenEmpty: Boolean): Unit =
     vscode.window.activeTextEditor.toOption match {
       case None => vscode.window.showErrorMessage("Open an Agda file first.")
       case Some(editor) if !isAgda(editor.document) =>
@@ -148,7 +156,7 @@ object AgdaClient {
             case None =>
               vscode.window.showErrorMessage("Move the cursor into a loaded Agda goal first.")
             case Some(goal) =>
-              if (goal.content.nonEmpty) {
+              if (goal.content.nonEmpty || !promptWhenEmpty) {
                 sendGoalAction(name, document, goal, goal.content)
               } else {
                 val options = vscode
@@ -177,18 +185,20 @@ object AgdaClient {
       vscode.window.showInformationMessage("An Agda command is already running.")
     } else {
       val command =
-        if (name == "Case split") s"Cmd_make_case ${goal.index}"
-        else s"Cmd_give WithoutForce ${goal.index}"
+        name match {
+          case "Case split"        => s"Cmd_make_case ${goal.index}"
+          case "Auto (Simplified)" => s"Cmd_autoOne Simplified ${goal.index}"
+          case _                   => s"Cmd_give WithoutForce ${goal.index}"
+        }
       val request =
         s"""IOTCM "${escapedString(document.uri.fsPath)}" NonInteractive Direct ( $command ${interactionRange(
             document,
             goal
           )} "${escapedString(content.replace("\r\n", "\n"))}" )""" + "\n"
       pendingGoalAction = Some(PendingGoalAction(name, document, goal, content))
+      goalActionOutput = ""
       outputChannel.foreach(_.show(true))
-      activeAgdaProcess.get
-        .selectDynamic("stdin")
-        .applyDynamic("write")(request)
+      activeAgdaProcess.get.stdin.write(request)
     }
   }
 
@@ -228,11 +238,9 @@ object AgdaClient {
         if (applied) {
           withSavedDocument(document) {
             if (connected && activeAgdaProcess.isDefined) {
-              activeAgdaProcess.get
-                .selectDynamic("stdin")
-                .applyDynamic("write")(
-                  highlightRequest(document, action.goal.index, filledStart, filledEnd)
-                )
+              activeAgdaProcess.get.stdin.write(
+                highlightRequest(document, action.goal.index, filledStart, filledEnd)
+              )
             } else {
               vscode.window.showErrorMessage(
                 "Agda disconnected before it could highlight the filled goal."
@@ -277,9 +285,7 @@ object AgdaClient {
         outputChannel.foreach(_.show(true))
         pendingCommand = Some(new PendingCommand(label, successTitle))
         commandOutput = ""
-        activeAgdaProcess.get
-          .selectDynamic("stdin")
-          .applyDynamic("write")(request)
+        activeAgdaProcess.get.stdin.write(request)
       }
     } else if (AgdaLsp.isActive) {
       AgdaLsp.sendCommand(request, label)
@@ -312,7 +318,7 @@ object AgdaClient {
     }
   }
 
-  private def connectAls(
+  private def connectAgdaLsp(
       context: vscode.ExtensionContext,
       document: vscode.TextDocument,
       executable: String
@@ -333,16 +339,8 @@ object AgdaClient {
       executable: String
   ): js.Promise[Unit] =
     new js.Promise[Unit]((resolve, reject) => {
-      val childProcess = js.Dynamic.global
-        .require("child_process")
-        .spawn(
-          executable,
-          js.Array("--interaction"),
-          js.Dynamic.literal(
-            cwd = workspacePath(document),
-            stdio = js.Array("pipe", "pipe", "pipe")
-          )
-        )
+      val childProcess =
+        process.spawn(executable, js.Array("--interaction"), workspacePath(document))
 
       var buffer = ""
       var settled = false
@@ -363,7 +361,9 @@ object AgdaClient {
         shuttingDown = true
         activeAgdaProcess = js.undefined
         pendingCommand = None
+        pendingGoalAction = None
         commandOutput = ""
+        goalActionOutput = ""
         childProcess.kill()
         ()
       }
@@ -385,6 +385,7 @@ object AgdaClient {
             pendingCommand.foreach(_.errorMessage = Some(message))
             pendingGoalAction.foreach { action =>
               pendingGoalAction = None
+              goalActionOutput = ""
               vscode.window.showErrorMessage(s"Agda ${action.name} failed: $message")
             }
           case AgdaHighlighting.InfoEvent(title, _) =>
@@ -395,20 +396,32 @@ object AgdaClient {
             pendingGoalAction.filter(_.name == "Case split").foreach(action => completeCaseSplit(action, lines))
           case AgdaHighlighting.GiveParenEvent(index) =>
             pendingGoalAction
-              .filter(action => action.name == "Give" && action.goal.index == index)
+              .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, s"(${action.content})"))
           case AgdaHighlighting.GiveNoParenEvent(index) =>
             pendingGoalAction
-              .filter(action => action.name == "Give" && action.goal.index == index)
+              .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, action.content))
           case AgdaHighlighting.GiveStringEvent(index, content) =>
             pendingGoalAction
-              .filter(action => action.name == "Give" && action.goal.index == index)
+              .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, content))
           case _ => ()
         }
         outputChannel.foreach(_.append(text))
         buffer = (buffer + text).takeRight(10000)
+        pendingGoalAction.foreach { action =>
+          goalActionOutput = (goalActionOutput + text).takeRight(10000)
+          if (goalActionOutput.contains("Agda2>")) {
+            pendingGoalAction = None
+            goalActionOutput = ""
+            val message =
+              if (action.name == "Auto (Simplified)")
+                "Agda Auto (Simplified) found no solution for this goal."
+              else s"Agda ${action.name} finished without a result. See the Agda Output channel."
+            vscode.window.showInformationMessage(message)
+          }
+        }
         pendingCommand.foreach { command =>
           commandOutput = (commandOutput + text).takeRight(10000)
           if (commandOutput.contains("Agda2>")) {
@@ -440,14 +453,12 @@ object AgdaClient {
           resolve(())
         }
       }
-      childProcess.selectDynamic("stdout").applyDynamic("on")("data", onOutput)
-      childProcess
-        .selectDynamic("stderr")
-        .applyDynamic("on")(
-          "data",
-          ((chunk: js.Any) => js.Dynamic.global.console.error(chunk)): js.Function1[js.Any, Unit]
-        )
-      childProcess.applyDynamic("on")(
+      childProcess.stdout.on("data", onOutput)
+      childProcess.stderr.on(
+        "data",
+        ((chunk: js.Any) => js.Dynamic.global.console.error(chunk)): js.Function1[js.Any, Unit]
+      )
+      childProcess.on(
         "error",
         ((error: js.Any) => {
           if (ready && !shuttingDown) {
@@ -460,7 +471,7 @@ object AgdaClient {
           }
         }): js.Function1[js.Any, Unit]
       )
-      childProcess.applyDynamic("on")(
+      childProcess.on(
         "exit",
         (
             (code: js.Any, signal: js.Any) => {
@@ -493,7 +504,7 @@ object AgdaClient {
       case "agda" =>
         connectAgda(context, document, setting("connection.agdaPath", "agda"))
       case _ =>
-        connectAls(context, document, setting("connection.alsPath", "als"))
+        connectAgdaLsp(context, document, setting("connection.alsPath", "als"))
     }
 
     pendingConnection = result

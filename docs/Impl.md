@@ -66,6 +66,7 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 
   3rd round instructions:
 - implement contextual features like case split, give(fill goal) with code actions
+- implement auto(simplified) for hole code actions
 - implement contextual features like hover, go-to-definition, and code actions for Agda files
 
 3rd round result:
@@ -74,3 +75,5 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   applies Agda's Give response, and requests highlighting for the inserted
   expression without reloading the file. Hover and go-to-definition remain
   pending; ALS goal actions are not supported yet.
+- Added **Agda: Auto (Simplified)** to hole code actions using Agda's
+  `Cmd_autoOne Simplified` request. This request form requires Agda 2.7 or later.

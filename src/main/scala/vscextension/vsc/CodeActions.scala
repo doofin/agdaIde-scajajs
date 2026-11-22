@@ -56,6 +56,12 @@ object CodeActions {
         (_: Any) => AgdaClient.giveAtCursor()
       )
     )
+    context.pushDisposable(
+      vscode.commands.registerCommand(
+        "agda-mode.autoSimplified",
+        (_: Any) => AgdaClient.autoSimplifiedAtCursor()
+      )
+    )
 
     val provider = new js.Object {
       def provideCodeActions(
@@ -75,6 +81,7 @@ object CodeActions {
           val actions = Vector.newBuilder[vscode.CodeAction]
           if (canSplit) actions += action("Agda: Case split", "agda-mode.caseSplit")
           actions += action("Agda: Give (fill goal)", "agda-mode.give")
+          actions += action("Agda: Auto (Simplified)", "agda-mode.autoSimplified")
           js.Array(actions.result()*)
         } else if (document.languageId == "agda") {
           emptyBracesAt(document, offset) match {
