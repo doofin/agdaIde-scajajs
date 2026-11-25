@@ -5,7 +5,7 @@ import scala.scalajs.js.Thenable
 
 import typings.vscode.mod as vscode
 
-object ExtensionHostIntegrationTest {
+object IntegrationTestMain {
   private val extensionId = "test.vscode-scalajs-hello"
 
   def main(args: Array[String]): Unit = {
@@ -20,21 +20,23 @@ object ExtensionHostIntegrationTest {
         extension.get
           .activate()
           .`then`((_: js.Any) =>
-            vscode.commands.getCommands().`then`((commands: js.Array[String]) => {
-              val expected = Set(
-                "agda-mode.connect",
-                "agda-mode.load",
-                "agda-mode.compile",
-                "agda-mode.quit",
-                "agda-mode.caseSplit",
-                "agda-mode.give",
-                "agda-mode.autoSimplified"
-              )
-              val missing = expected.diff(commands.toSeq.toSet)
-              if (missing.nonEmpty) {
-                throw new Exception(s"Agda commands were not registered: ${missing.toSeq.sorted.mkString(", ")}")
-              }
-            })
+            vscode.commands
+              .getCommands()
+              .`then`((commands: js.Array[String]) => {
+                val expected = Set(
+                  "agda-mode.connect",
+                  "agda-mode.load",
+                  "agda-mode.compile",
+                  "agda-mode.quit",
+                  "agda-mode.caseSplit",
+                  "agda-mode.give",
+                  "agda-mode.autoSimplified"
+                )
+                val missing = expected.diff(commands.toSeq.toSet)
+                if (missing.nonEmpty) {
+                  throw new Exception(s"Agda commands were not registered: ${missing.toSeq.sorted.mkString(", ")}")
+                }
+              })
           )
           .asInstanceOf[Thenable[Unit]]
       }

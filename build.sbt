@@ -3,6 +3,7 @@ import org.scalajs.linker.interface.{ModuleKind, ModuleInitializer, ModuleSplitS
 
 val outdir = "out" // output directory for the extension
 val scala3Version = "3.3.9"
+val munitVersion = "1.0.4"
 // open command in sbt
 lazy val open = taskKey[Unit]("open vscode")
 lazy val prepareExtension = taskKey[Unit]("prepare extension output")
@@ -22,13 +23,10 @@ lazy val root = project
     scalacOptions ++= Seq(
       "-Wunused:all"
     ),
-    // check if it is running in test
-    // testOptions += Tests.Setup(_ => sys.props("testing") = "true"),
     Compile / fastOptJS / artifactPath := baseDirectory.value / "out" / "extension.js",
     Compile / fullOptJS / artifactPath := baseDirectory.value / "out" / "extension.js",
     libraryDependencies ++= Seq(
-      // "com.lihaoyi" %%% "utest" % "0.8.2" % "test",
-      "org.scalameta" %%% "munit" % "0.7.29" % Test
+      "org.scalameta" %%% "munit" % munitVersion % Test
     ),
     Compile / npmDependencies ++=
       Seq(
@@ -37,35 +35,26 @@ lazy val root = project
         "@types/node-fetch" -> "2.5.12", // ts 3.7,compile error for scalablytyped
         "@vscode/prompt-tsx" -> "0.3.0-alpha.18",
         "vscode-languageclient" -> "9.0.1" // working with manuallly created facade
-        // https://github.com/microsoft/vscode-languageserver-node/tree/release/client/9.0.1
       ),
-    /* ++ // check if it is running in test
-        (if (sys.props.get("testing") != Some("true"))
-           Seq(
-             "@types/vscode" -> "1.96.0"
-           )
-         else Seq.empty), */
-    stIgnore ++= List( // don't generate types with scalablytyped
+    stIgnore ++= List(
     ),
     prepareExtension := prepareExtensionTask().value,
     open := openVSCodeTask().dependsOn(Compile / fastOptJS, prepareExtension).value
-    // open := openVSCodeTask.dependsOn(Compile / fastOptJS / webpack).value,
-    // testFrameworks += new TestFramework("utest.runner.Framework")
-    // publishMarketplace := publishMarketplaceTask.dependsOn(fullOptJS in Compile).value
   )
 
 lazy val integrationTest = project
-  .in(file("integrationTest"))
+  .in(file("src/integrationTest"))
   .enablePlugins(ScalaJSPlugin)
   .dependsOn(root)
   .settings(
     moduleName := "agda-extension-integration-test",
     scalaVersion := scala3Version,
-    Compile / mainClass := Some("vscextension.ExtensionHostIntegrationTest"),
+    Compile / scalaSource := baseDirectory.value / "main" / "scala",
+    Compile / mainClass := Some("vscextension.IntegrationTestMain"),
     scalaJSUseMainModuleInitializer := true,
     scalaJSLinkerConfig ~= (_.withModuleKind(ModuleKind.CommonJSModule)),
     Compile / fastOptJS / artifactPath :=
-      baseDirectory.value.getParentFile / outdir / "test" / "extension.test.js"
+      (root / baseDirectory).value / outdir / "test" / "extension.test.js"
   )
 
 addCommandAlias("compile", ";fastOptJS")
@@ -120,15 +109,3 @@ def prepareExtensionTask(): Def.Initialize[Task[Unit]] =
       )
     )
   }
-/* lazy val installDependencies = Def.task[Unit] {
-  val base = (ThisProject / baseDirectory).value
-  val log = (ThisProject / streams).value.log
-  if (!(base / "node_module").exists) {
-    val pb =
-      new java.lang.ProcessBuilder("npm", "install")
-        .directory(base)
-        .redirectErrorStream(true)
-
-    pb ! log
-  }
-} */
