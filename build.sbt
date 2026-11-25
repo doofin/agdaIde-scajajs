@@ -2,6 +2,7 @@ import scala.sys.process.*
 import org.scalajs.linker.interface.{ModuleKind, ModuleInitializer, ModuleSplitStyle}
 
 val outdir = "out" // output directory for the extension
+val scala3Version = "3.3.9"
 // open command in sbt
 lazy val open = taskKey[Unit]("open vscode")
 lazy val prepareExtension = taskKey[Unit]("prepare extension output")
@@ -13,13 +14,10 @@ lazy val root = project
     ScalaJSBundlerPlugin,
     ScalablyTypedConverterPlugin
   )
-  .configs(IntegrationTest)
-  .settings(Defaults.itSettings: _*)
-  .settings(inConfig(IntegrationTest)(ScalaJSPlugin.testConfigSettings): _*)
   .settings(
     moduleName := "vscextension",
     organization := "com.doofin",
-    scalaVersion := "3.3.9",
+    scalaVersion := scala3Version,
     // warn unused imports and vars
     scalacOptions ++= Seq(
       "-Wunused:all"
@@ -55,6 +53,21 @@ lazy val root = project
     // testFrameworks += new TestFramework("utest.runner.Framework")
     // publishMarketplace := publishMarketplaceTask.dependsOn(fullOptJS in Compile).value
   )
+
+lazy val integrationTest = project
+  .in(file("integrationTest"))
+  .enablePlugins(ScalaJSPlugin)
+  .dependsOn(root)
+  .settings(
+    moduleName := "agda-extension-integration-test",
+    scalaVersion := scala3Version,
+    Compile / mainClass := Some("vscextension.ExtensionHostIntegrationTest"),
+    scalaJSUseMainModuleInitializer := true,
+    scalaJSLinkerConfig ~= (_.withModuleKind(ModuleKind.CommonJSModule)),
+    Compile / fastOptJS / artifactPath :=
+      baseDirectory.value.getParentFile / outdir / "test" / "extension.test.js"
+  )
+
 addCommandAlias("compile", ";fastOptJS")
 addCommandAlias("dev", "~fastOptJS")
 addCommandAlias("fix", ";scalafixEnable;scalafixAll;")
@@ -84,6 +97,7 @@ def prepareExtensionTask(): Def.Initialize[Task[Unit]] =
 
     IO.createDirectory(output / "server")
     IO.createDirectory(output / "res")
+    IO.createDirectory(output / "test")
     IO.copyFile(base / "package.json", output / "package.json")
     IO.copyDirectory(base / "src" / "res", output / "res")
     IO.copyFile(base / "server" / "server.js", output / "server" / "server.js")

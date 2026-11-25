@@ -1,53 +1,32 @@
 package vscextension.io
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation.JSImport
-// import typings.node.childProcessMod.spawn
+
+import typings.node.childProcessMod.{
+  ChildProcess as NodeChildProcess,
+  ChildProcessWithoutNullStreams,
+  SpawnOptionsWithoutStdio,
+  spawn as spawnNode
+}
+import typings.node.bufferMod.global.BufferEncoding
+import typings.node.processMod.global.NodeJS.Signals
+import typings.node.streamMod.{Readable, Writable}
 
 object process {
-  @js.native
-  @JSImport("child_process", JSImport.Namespace)
-  private object ChildProcessModule extends js.Object {
-    def spawn(command: String, args: js.Array[String], options: SpawnOptions): ChildProcess = js.native
-  }
-
-  @js.native
-  trait ChildProcess extends js.Object {
-    val stdin: WritableStream = js.native
-    val stdout: ReadableStream = js.native
-    val stderr: ReadableStream = js.native
-
-    def kill(): Boolean = js.native
-    def on(event: String, listener: js.Function1[js.Any, Unit]): ChildProcess = js.native
-    def on(event: String, listener: js.Function2[js.Any, js.Any, Unit]): ChildProcess = js.native
-  }
-
-  @js.native
-  trait ReadableStream extends js.Object {
-    def on(event: String, listener: js.Function1[js.Any, Unit]): ReadableStream = js.native
-  }
-
-  @js.native
-  trait WritableStream extends js.Object {
-    def write(chunk: String): Boolean = js.native
-  }
-
-  @js.native
-  trait SpawnOptions extends js.Object
-
-  object SpawnOptions {
-    def apply(cwd: String): SpawnOptions =
-      js.Dynamic
-        .literal(cwd = cwd, stdio = js.Array("pipe", "pipe", "pipe"))
-        .asInstanceOf[SpawnOptions]
+  type ChildProcess = ChildProcessWithoutNullStreams & NodeChildProcess & js.Object {
+    val stdin: Writable
+    val stdout: Readable
+    val stderr: Readable
   }
 
   def spawn(command: String, args: js.Array[String], cwd: String): ChildProcess = {
-    //  todo use typings for SpawnOptions
-    // val options=
-    // spawn(command, options)
-
-    ChildProcessModule.spawn(command, args, SpawnOptions(cwd))
+    val options: SpawnOptionsWithoutStdio = SpawnOptionsWithoutStdio().setCwd(cwd)
+    spawnNode(command, args, options).asInstanceOf[ChildProcess]
   }
 
+  def writeText(stream: Writable, value: String): Boolean =
+    stream.write(value.asInstanceOf[js.Any], BufferEncoding.utf8)
+
+  def onExit(child: ChildProcess)(listener: (Double | Null, Signals | Null) => Unit): Unit =
+    child.on("exit", listener.asInstanceOf[js.Function1[Any, Unit]])
 }

@@ -77,3 +77,7 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   pending; ALS goal actions are not supported yet.
 - Added **Agda: Auto (Simplified)** to hole code actions using Agda's
   `Cmd_autoOne Simplified` request. This request form requires Agda 2.7 or later.
+
+
+4th round instructions:
+- improve and enhance this project with src-ref/vscode-scalajs-hello

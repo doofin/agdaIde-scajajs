@@ -198,7 +198,7 @@ object AgdaClient {
       pendingGoalAction = Some(PendingGoalAction(name, document, goal, content))
       goalActionOutput = ""
       outputChannel.foreach(_.show(true))
-      activeAgdaProcess.get.stdin.write(request)
+      process.writeText(activeAgdaProcess.get.stdin, request)
     }
   }
 
@@ -238,7 +238,8 @@ object AgdaClient {
         if (applied) {
           withSavedDocument(document) {
             if (connected && activeAgdaProcess.isDefined) {
-              activeAgdaProcess.get.stdin.write(
+              process.writeText(
+                activeAgdaProcess.get.stdin,
                 highlightRequest(document, action.goal.index, filledStart, filledEnd)
               )
             } else {
@@ -285,7 +286,7 @@ object AgdaClient {
         outputChannel.foreach(_.show(true))
         pendingCommand = Some(new PendingCommand(label, successTitle))
         commandOutput = ""
-        activeAgdaProcess.get.stdin.write(request)
+        process.writeText(activeAgdaProcess.get.stdin, request)
       }
     } else if (AgdaLsp.isActive) {
       AgdaLsp.sendCommand(request, label)
@@ -373,7 +374,7 @@ object AgdaClient {
       context.pushDisposable(new vscode.Disposable(() => outputChannel.foreach(_.dispose())))
       context.pushDisposable(new vscode.Disposable(() => stopConnection()))
 
-      val onOutput: js.Function1[js.Any, Unit] = (chunk: js.Any) => {
+      val onOutput: js.Function1[Any, Unit] = (chunk: Any) => {
         val text = chunk.asInstanceOf[js.Dynamic].toString().asInstanceOf[String]
         val events = AgdaHighlighting.consume(document, text)
         events.foreach {
@@ -456,11 +457,11 @@ object AgdaClient {
       childProcess.stdout.on("data", onOutput)
       childProcess.stderr.on(
         "data",
-        ((chunk: js.Any) => js.Dynamic.global.console.error(chunk)): js.Function1[js.Any, Unit]
+        ((chunk: Any) => js.Dynamic.global.console.error(chunk.toString)): js.Function1[Any, Unit]
       )
       childProcess.on(
         "error",
-        ((error: js.Any) => {
+        ((error: Any) => {
           if (ready && !shuttingDown) {
             connected = false
             vscode.window.showErrorMessage(s"Agda process failed: $error")
@@ -469,25 +470,20 @@ object AgdaClient {
             js.Dynamic.global.clearTimeout(timeout)
             reject(error)
           }
-        }): js.Function1[js.Any, Unit]
+        }): js.Function1[Any, Unit]
       )
-      childProcess.on(
-        "exit",
-        (
-            (code: js.Any, signal: js.Any) => {
-              if (ready && !shuttingDown) {
-                connected = false
-                vscode.window.showErrorMessage(
-                  s"Agda stopped unexpectedly (code=$code, signal=$signal)."
-                )
-              } else if (!settled) {
-                settled = true
-                js.Dynamic.global.clearTimeout(timeout)
-                reject(new js.Error(s"Agda exited before becoming ready (code=$code, signal=$signal)."))
-              }
-            }
-        ): js.Function2[js.Any, js.Any, Unit]
-      )
+      process.onExit(childProcess) { (code, signal) =>
+        if (ready && !shuttingDown) {
+          connected = false
+          vscode.window.showErrorMessage(
+            s"Agda stopped unexpectedly (code=$code, signal=$signal)."
+          )
+        } else if (!settled) {
+          settled = true
+          js.Dynamic.global.clearTimeout(timeout)
+          reject(new js.Error(s"Agda exited before becoming ready (code=$code, signal=$signal)."))
+        }
+      }
     })
 
   private def connect(

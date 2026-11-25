@@ -28,6 +28,7 @@ metals.sbt
 .bsp/
 .metals/
 out/
+.vscode-test/
 /.metals/
 /target/
 /.idea/
