@@ -49,6 +49,9 @@ lazy val integrationTest = project
   .settings(
     moduleName := "agda-extension-integration-test",
     scalaVersion := scala3Version,
+    libraryDependencies ++= Seq(
+      "org.scalameta" %%% "munit" % munitVersion
+    ),
     Compile / scalaSource := baseDirectory.value / "main" / "scala",
     Compile / mainClass := Some("vscextension.IntegrationTestMain"),
     scalaJSUseMainModuleInitializer := true,
