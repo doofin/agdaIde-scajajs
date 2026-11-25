@@ -1,9 +1,12 @@
 package vscextension
 
+import scala.language.implicitConversions
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.scalajs.js
+
 import scala.scalajs.js.Thenable
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.Thenable.Implicits.*
@@ -12,8 +15,14 @@ import scala.scalajs.js.timers.setTimeout
 import typings.node.childProcessMod.spawnSync
 import typings.node.nodeColonfsMod
 import typings.vscode.mod as vscode
+import typings.std.PromiseLike
 
 object testUtils {
+  object implicitConv {
+    implicit def promiseLikeToFuture[A](p: PromiseLike[A]): Future[A] =
+      p.toFuture
+  }
+
   def codeActionsAt(
       document: vscode.TextDocument,
       position: vscode.Position

@@ -12,10 +12,13 @@ import scala.scalajs.js.timers.setTimeout
 import typings.node.childProcessMod.spawnSync
 import typings.node.nodeColonfsMod
 import typings.vscode.mod as vscode
+import typings.std.PromiseLike.PromiseLikeOps
 
 import testUtils.*
+import testUtils.implicitConv.*
 import Mocha.*
 import IntegrationTestMain.extensionId
+import vsc.commands
 
 object agdaAutoSuite {
   def agdaVersion = {
@@ -26,15 +29,11 @@ object agdaAutoSuite {
   }
 
   def run(): Unit = {
-    val extension = vscode.extensions.getExtension[js.Any](extensionId)
+    val extension = vscode.extensions.getExtension[js.Any](extensionId).get
 
     suite("Agda extension host") { () =>
       test("activates and registers Agda commands") { () =>
-        if (!extension.isDefined) {
-          throw new Exception(s"Extension '$extensionId' was not found in the extension host.")
-        }
-
-        extension.get
+        extension
           .activate()
           .`then`(_ =>
             vscode.commands
@@ -64,7 +63,7 @@ object agdaAutoSuite {
     }
   }
 
-  private val autoFixture =
+  private val agdaCode1 =
     """module AgdaAutoIntegration where
       |data Nat : Set where
       |  zero : Nat
@@ -74,21 +73,33 @@ object agdaAutoSuite {
       |suc n + m = {!   !}
       |""".stripMargin
 
-  private def runAutoFillTest(
-      extension: js.UndefOr[typings.vscode.mod.Extension[js.Any]]
-  ): Future[Unit] = {
+  def getDocument(extension: vscode.Extension[_], str: String) = {
     val workspace = vscode.workspace.workspaceFolders.toOption
       .flatMap(_.headOption)
       .getOrElse(throw new Exception("The integration test requires an open workspace."))
     val uri = vscode.Uri.joinPath(workspace.uri, "AgdaAutoIntegration.agda")
     val config = vscode.workspace.getConfiguration("agdaMode")
 
-    nodeColonfsMod.writeFileSync(uri.fsPath, autoFixture)
-    config
-      .update("connection.backend", "agda", vscode.ConfigurationTarget.Global)
-      .toFuture
-      .flatMap(_ => extension.get.activate().toFuture)
-      .flatMap(_ => vscode.workspace.openTextDocument(uri).toFuture)
+    // write the Agda code to the test file
+    nodeColonfsMod.writeFileSync(uri.fsPath, str)
+
+    (
+      config
+        .update("connection.backend", "agda", vscode.ConfigurationTarget.Global)
+        .toFuture
+        .flatMap(_ => extension.activate())
+        .flatMap(_ => vscode.workspace.openTextDocument(uri)),
+      uri
+    )
+  }
+
+  private def runAutoFillTest(
+      extension: vscode.Extension[_]
+  ): Future[Unit] = {
+
+    val (documentF, uri) = getDocument(extension, agdaCode1)
+
+    documentF
       .flatMap { document =>
         vscode.window.showTextDocument(document).toFuture.map { editor =>
           val holeOffset = document.getText().indexOf("{!")
@@ -101,16 +112,13 @@ object agdaAutoSuite {
       .flatMap { case (document, position) =>
         vscode.commands
           .executeCommand[js.Any]("agda-mode.load")
-          .toFuture
           .flatMap(_ =>
             eventually(
               codeActionsAt(document, position),
               { (actions) =>
                 actions.exists(action =>
                   action.command.get.command
-                    // .selectDynamic("command")
-                    // .selectDynamic("command")
-                    .asInstanceOf[String] == "agda-mode.autoSimplified"
+                    == "agda-mode.autoSimplified"
                 )
               },
               "Auto (Simplified) code action"
