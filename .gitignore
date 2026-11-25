@@ -2,6 +2,8 @@
 src-ref/ 
 logs
 *.log
+.mcp.json
+.vscode
 
 # js and Node.js related files
 package-lock.json

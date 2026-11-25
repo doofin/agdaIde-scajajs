@@ -27,6 +27,11 @@ object process {
   def writeText(stream: Writable, value: String): Boolean =
     stream.write(value.asInstanceOf[js.Any], BufferEncoding.utf8)
 
-  def onExit(child: ChildProcess)(listener: (Double | Null, Signals | Null) => Unit): Unit =
-    child.on("exit", listener.asInstanceOf[js.Function1[Any, Unit]])
+  def onExit(
+      child: ChildProcess
+  )(listener: js.Function2[Double | Null, Signals | Null, Unit]): Unit =
+    child.on_exit(
+      typings.node.nodeStrings.exit,
+      listener
+    )
 }

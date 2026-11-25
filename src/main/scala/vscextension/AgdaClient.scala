@@ -472,18 +472,26 @@ object AgdaClient {
           }
         }): js.Function1[Any, Unit]
       )
-      process.onExit(childProcess) { (code, signal) =>
-        if (ready && !shuttingDown) {
-          connected = false
-          vscode.window.showErrorMessage(
-            s"Agda stopped unexpectedly (code=$code, signal=$signal)."
-          )
-        } else if (!settled) {
-          settled = true
-          js.Dynamic.global.clearTimeout(timeout)
-          reject(new js.Error(s"Agda exited before becoming ready (code=$code, signal=$signal)."))
-        }
-      }
+      process.onExit(childProcess)(
+        (
+            (code: Double | Null, signal: typings.node.processMod.global.NodeJS.Signals | Null) => {
+              if (ready && !shuttingDown) {
+                connected = false
+                vscode.window.showErrorMessage(
+                  s"Agda stopped unexpectedly (code=$code, signal=$signal)."
+                )
+              } else if (!settled) {
+                settled = true
+                js.Dynamic.global.clearTimeout(timeout)
+                reject(new js.Error(s"Agda exited before becoming ready (code=$code, signal=$signal)."))
+              }
+            }
+        ): js.Function2[
+          Double | Null,
+          typings.node.processMod.global.NodeJS.Signals | Null,
+          Unit
+        ]
+      )
     })
 
   private def connect(

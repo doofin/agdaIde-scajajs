@@ -68,9 +68,11 @@ npm test
 ```
 
 The `pretest` script compiles the extension and the Scala.js test runner before
-launching VS Code through `@vscode/test-electron`. The current integration test
-checks extension activation and Agda command registration without requiring an
-Agda or ALS executable. The VS Code runtime module is only available in the
+launching VS Code through `@vscode/test-electron`. The activation test does not
+require Agda. The Auto (Simplified) integration test exercises the real direct
+Agda backend, checks that the code action is offered, fills the selected hole,
+and verifies the next hole is preserved. It is skipped unless Agda 2.7 or later
+is available on `PATH`. The VS Code runtime module is only available in the
 extension host, so tests that load extension code should use this runner rather
 than Node-based `sbt test`.
 

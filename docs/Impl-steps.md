@@ -81,3 +81,16 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 
 4th round instructions:
 - improve and enhance this project with src-ref/vscode-scalajs-hello
+- check previous implementation of agda auto(which fills holes), and add integration test for it
+
+4th round result:
+- Compared Auto request encoding and response expectations with the reference
+  `Test__Auto` and request implementation. Simplified Auto uses
+  `Cmd_autoOne Simplified` on Agda 2.7+ and fills the selected goal from its
+  Give response.
+- Added an extension-host integration test that loads a two-hole Agda fixture,
+  checks the Auto (Simplified) code action, fills the first hole using the real
+  Agda backend, and verifies the second hole remains. The test skips when Agda
+  2.7+ is unavailable.
+- Fixed child-process exit event registration discovered by the real-backend
+  test; the typed Node exit callback must be passed as a JavaScript `Function2`.
