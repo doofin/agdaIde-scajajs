@@ -112,3 +112,8 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 - `agdaAutoLoadSuite` separately verifies normalization and loading on open,
   then inserts another hole and checks that automatic reload restores goal
   actions.
+
+
+  6th round instructions:
+  - go to definition: think how to implement this feature, don't code it yet
+  - ok impl it(go to definition) only for agda backend, no als yet

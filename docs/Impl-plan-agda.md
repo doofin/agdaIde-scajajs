@@ -1,11 +1,9 @@
 # Migrating agda-mode-vscode to Scala.js
 
 This is a migration guide for the original
-[agda-mode-vscode](https://github.com/banacorn/agda-mode-vscode),The original behavior is implemented in
-ReScript and has a much larger surface area.
+[agda-mode-vscode](https://github.com/banacorn/agda-mode-vscode),The original behavior is implemented in ReScript
 
-The local reference is `src-ref/agda-mode-vscode/`. It is ignored by
-Git.
+The local reference is `src-ref/agda-mode-vscode/`. It is ignored by Git.
 
 ## What the original extension does
 
@@ -53,43 +51,9 @@ its lifecycle,
 serialization, and teardown behavior should be treated as requirements, not
 incidental implementation details.
 
-## steps
+## steps and features
 
-### 1. Establish the extension contract
-
-Port the supported Agda
-and literate Agda language IDs, activation behavior, commands, keybindings,
-configuration, and semantic-token color names. Keep the desktop `main` entry
-working first; add the browser `browser` entry only when the web platform work
-is ready.
-
-Use the original manifest and `src/LanguageId.res` to inventory contributed
-IDs and settings. The current root `package.json` still declares the sample
-extension and its Hello World command.
-
-### 2. Build a desktop ALS vertical slice
-
-Start with one explicitly configured, locally installed ALS executable and one
-Agda document. This reuses the existing Scala.js language-client infrastructure
-while keeping binary discovery and downloads out of the first end-to-end
-milestone. Implement this path in order:
-
-1. Select Agda document language IDs and start an ALS client.
-2. Send ALS initialization and decode its Agda/ALS version response.
-3. Implement one Agda action (load) using ALS's custom request/response
-   protocol, not the generic Plain Text sample server.
-4. Route the response into document state and display a useful error or result.
-5. Stop the client on unload/deactivation and verify that failures do not leave
-   a hanging request or a stale connection.
-
-The existing `src/main/scala/vscextension/lsp.scala` and
-`facade/languageClientAPI.scala` are useful starting points, but the original
-ALS protocol is custom: it initializes with `CmdReqSYN`, sends command
-requests, receives multiple response messages, and waits for `ResponseEnd`.
-The original implementation is in `src/Connection/Endpoint/Connection__Endpoint__ALS.res`
-and `src/Connection/Protocol/Connection__Protocol__LSP.res`.
-
-### 3. Introduce typed document state and commands
+### Introduce typed document state and commands
 
 Once load works, add a sealed command model and a state object per loaded
 document. Keep VS Code event registration at the extension boundary; route
@@ -109,7 +73,7 @@ version-specific Agda wire syntax; the original `Request.res` contains
 version-dependent encodings and normalization modes that should not be
 flattened into string concatenation at call sites.
 
-### 4. Port coordinate-sensitive logic before UI polish
+### offsets-sensitive logic
 
 Goals and highlighting depend on exact offsets, so isolate them as pure logic
 and test them before wiring in decorations. VS Code uses UTF-16 offsets;
@@ -131,11 +95,7 @@ builder.push(line, start, length, tokenTypeIndex)
 builder.build()
 ```
 
-Keep the legend's token and modifier ordering consistent with the indices sent
-to the builder. Add cancellation handling and trigger token refreshes when the
-underlying Agda token state changes.
-
-### 5. Add Unicode input and the panel
+### Unicode input and the panel
 
 Port the translator and input buffer independently of VS Code. Then implement
 editor selection tracking, decorations, candidate navigation, and batched
@@ -145,26 +105,6 @@ The translation table (`asset/query.js`) and the ReScript `View` components are
 part of the behavior. Preserve input in both the editor and prompts, keybinding
 contexts, cleanup when switching documents, and the behavior when edits or
 cursor movement happen while a rewrite is pending.
-
-### 6. Add candidate resolution, downloads, and platform parity
-
-After the configured local ALS path works, add the rest of the original
-connection behavior as separate increments:
-
-- Ordered candidates (`connection.paths`), preferred candidate, PATH lookup,
-  executable probing, and Agda/ALS version detection.
-- Direct `agda --interaction` transport and its incremental S-expression
-  parser.
-- Desktop TCP and WASM transports, then the browser entry point.
-- Release/channel selection, managed storage, downloads, WASM-loader checks,
-  and switching between installations.
-
-Keep candidate identity, release/channel selection, and download order
-separate. The detailed connection requirements are in
-`src-ref/agda-mode-vscode/docs/specifications/connection.md` (when the local
-reference checkout is present). In particular, preserve preferred-candidate
-precedence, reverse ordering of configured paths, no implicit preference
-change after download, and managed-download cleanup semantics.
 
 ## Testing and completion criteria
 
@@ -189,3 +129,17 @@ Treat a feature as migrated only when its behavior is implemented, its
 contributed VS Code metadata is present, and its relevant pure or
 extension-host tests pass. Until then, document it as planned or in progress;
 the existing sample code is not evidence of Agda feature parity.
+
+
+## go to definition
+The original extension gets definition locations from Agda’s highlighting annotations, rather than searching names in source. Its `token parser` preserves an optional source filepath and offset. `Tokens` looks up the annotation at the cursor and resolves the source location; `Main` registers the provider. The current `agdaParsing.scala` parses highlight ranges and token types, but discards that source metadata.
+
+Suggested design:
+
+1. Extend the parsed highlight data with an optional definition source, extracting it from the detailed Agda annotation form. Leave it absent when the annotation has no source.
+2. Store source locations alongside highlight ranges in a dedicated definition index, keyed by document URI. Clear the index when the document changes or a new load starts; only use results from a load that still matches the document version.
+3. Add a VS Code definition provider, preferably in a separate `AgdaDefinitionProvider` component. It should find the source annotation under the cursor, open its target document, convert the target offset to a VS Code position, and return no result when no valid source is available. Registering a provider enables F12/Peek Definition; no new command or keybinding is needed.
+4. For the direct backend, preserve load-time document text and offset conversion. Agda uses one-based code-point offsets, while VS Code uses UTF-16 offsets; CRLF and edits during a load can otherwise send navigation to the wrong location. The original implementation treats same-file and cross-file offsets differently, so preserve that distinction.
+5. For ALS, first check whether its language server already advertises the standard LSP definition capability. The LanguageClient should register that provider automatically; avoid adding a competing provider unless ALS lacks support.
+
+I’d test source-metadata parsing and Unicode/CRLF conversion separately, then add an extension-host test that navigates from a reference to a symbol in another module. The main risk is stale locations after edits or while a load is in flight; dropping the index until a fresh load completes is the simpler safe behavior.
