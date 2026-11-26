@@ -8,21 +8,21 @@ val munitVersion = "1.0.4"
 lazy val open = taskKey[Unit]("open vscode")
 lazy val prepareExtension = taskKey[Unit]("prepare extension output")
 
-// pure unit tests that run on the JVM only, for VS Code-independent code like agdaParsing
+// Scala.js unit tests run under Node without loading the VS Code extension.
 lazy val pureUnitTests = project
   .in(file("src/test"))
+  .enablePlugins(ScalaJSPlugin)
   .settings(
     moduleName := "pureUnitTests",
     scalaVersion := scala3Version,
     Compile / unmanagedSourceDirectories +=
       baseDirectory.value.getParentFile / "main" / "scala-pure",
-    // Compile shared pure sources on the JVM without pulling in the Scala.js extension.
     Test / unmanagedSourceDirectories := Seq(
       baseDirectory.value / "scala",
       baseDirectory.value / "java"
     ),
     Test / resourceDirectory := baseDirectory.value / "resources",
-    libraryDependencies += "org.scalameta" %% "munit" % munitVersion % Test
+    libraryDependencies += "org.scalameta" %%% "munit" % munitVersion % Test
   )
 
 lazy val root = project

@@ -100,4 +100,5 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   contributed keybindings in VS Code Keyboard Shortcuts.
 - Extracted VS Code-independent S-expression and hole parsing into
   `agdaParsing`, with MUnit coverage under `src/test`. Root `sbt test` runs
-  these tests on the JVM so they do not load VS Code's host-provided module.
+  these tests under Node.js in an isolated Scala.js test project, so they do
+  not load VS Code's host-provided module.
