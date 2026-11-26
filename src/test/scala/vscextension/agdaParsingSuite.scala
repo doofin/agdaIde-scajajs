@@ -56,6 +56,22 @@ class agdaParsingSuite extends munit.FunSuite {
     )
   }
 
+  test("parses Give event variants and rejects invalid goal indices") {
+    assertEquals(
+      agdaParsing.parseEvent("(agda2-give-action 3 paren)"),
+      Some(agdaParsing.ParsedResponse(None, Some(agdaParsing.GiveParenEvent(3))))
+    )
+    assertEquals(
+      agdaParsing.parseEvent("(agda2-give-action 4 \"no-paren\")"),
+      Some(agdaParsing.ParsedResponse(None, Some(agdaParsing.GiveNoParenEvent(4))))
+    )
+    assertEquals(
+      agdaParsing.parseEvent("(agda2-give-action 5 \"suc n\")"),
+      Some(agdaParsing.ParsedResponse(None, Some(agdaParsing.GiveStringEvent(5, "suc n"))))
+    )
+    assertEquals(agdaParsing.parseEvent("(agda2-give-action nope paren)"), None)
+  }
+
   test("stream parser buffers partial expressions and respects quoted parentheses") {
     val stream = new agdaParsing.SexpStream
     val firstChunk = "(agda2-info-action \"title\" \"message ("

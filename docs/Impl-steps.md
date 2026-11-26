@@ -87,7 +87,8 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 - when doing agda load, support using ? and {} for holes in the agda file, and replace them with appropriate Agda hole syntax and save the file before sending the load request. underline the holes in the editor.
 - Add shortcut support for agda commands like Load(C-c l), Compile(C-c c), and Auto (Simplified)(C-c a), and allow user to configure keybindings for them.
 - split parsing(Scala code that doen't depend on vscode) code into agdaParsing and add munit unit tests for it under src/test
-- auto load Agda files when they are opened. also audo load when holes are changed.
+- check this proj to see if we can add more pure unit tests
+- auto load Agda files when they are opened. also auto load when holes are changed.
 
 5th round result:
 - On Load, `?` and `{}` are converted to `{! !}` outside comments, strings,
@@ -102,3 +103,10 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
   `agdaParsing`, with MUnit coverage under `src/test`. Root `sbt test` runs
   these tests under Node.js in an isolated Scala.js test project, so they do
   not load VS Code's host-provided module.
+- Agda documents are loaded automatically when opened. Edits are debounced
+  per document and trigger a reload when a hole existed before or after the
+  edit; load normalization and code-action edits are excluded to avoid
+  redundant loads. Direct-backend output is associated with the document
+  whose command is running.
+- The extension-host integration test verifies automatic normalization and
+  loading on open, then inserts another hole and verifies automatic reload.

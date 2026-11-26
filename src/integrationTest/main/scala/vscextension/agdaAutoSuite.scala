@@ -109,50 +109,61 @@ object agdaAutoSuite {
 
     documentF
       .flatMap { document =>
-        vscode.window.showTextDocument(document).toFuture.map { editor =>
-          val holeOffset = document.getText().indexOf("?")
-          if (holeOffset < 0) throw new Exception("Auto integration fixture has no goal.")
-          val position = document.positionAt(holeOffset + 1)
+        vscode.window.showTextDocument(document).toFuture.map(editor => (document, editor))
+      }
+      .flatMap { case (document, editor) =>
+        eventually(
+          Future.successful(document.getText().replace("\r\n", "\n")),
+          text =>
+            text.contains("zero + n = {! !}") &&
+              text.contains("suc n + m = {! !}") &&
+              !document.isDirty,
+          "automatic load to normalize and save ? and {} holes"
+        ).map { _ =>
+          val firstHole = document.getText().indexOf("zero + n = {! !}")
+          if (firstHole < 0) throw new Exception("Automatic load did not normalize the first goal.")
+          val position = document.positionAt(firstHole + "zero + n = {! ".length)
           editor.selection = new vscode.Selection(position, position)
-          (document, position)
+          (document, editor, position)
         }
       }
-      .flatMap { case (document, position) =>
-        vscode.commands
-          .executeCommand[js.Any]("agda-mode.load")
-          .flatMap(_ =>
-            eventually(
-              Future.successful(document.getText().replace("\r\n", "\n")),
-              text =>
-                text.contains("zero + n = {! !}") &&
-                  text.contains("suc n + m = {! !}") &&
-                  !document.isDirty,
-              "Load to normalize and save ? and {} holes"
-            )
+      .flatMap { case (document, _, position) =>
+        eventually(
+          codeActionsAt(document, position),
+          actions => actions.exists(_.command.get.command == "agda-mode.autoSimplified"),
+          "Auto (Simplified) code action after loading on open"
+        ).flatMap { _ =>
+          val appendedHole = "\nidentity : Nat → Nat\nidentity n = ?\n"
+          val end = document.positionAt(document.getText().length)
+          val edit = new vscode.WorkspaceEdit()
+          edit.replace(document.uri, new vscode.Range(end, end), appendedHole)
+          vscode.workspace.applyEdit(edit).toFuture
+        }.flatMap { _ =>
+          eventually(
+            Future.successful(document.getText().replace("\r\n", "\n")),
+            text => text.contains("identity n = {! !}") && !document.isDirty,
+            "automatic load after adding a hole"
           )
-          .flatMap(_ =>
-            eventually(
-              codeActionsAt(document, position),
-              { (actions) =>
-                actions.exists(action =>
-                  action.command.get.command
-                    == "agda-mode.autoSimplified"
-                )
-              },
-              "Auto (Simplified) code action"
-            )
+        }.flatMap { _ =>
+          val addedHole = document.getText().lastIndexOf("{! !}")
+          val addedPosition = document.positionAt(addedHole + 2)
+          eventually(
+            codeActionsAt(document, addedPosition),
+            actions => actions.exists(_.command.get.command == "agda-mode.autoSimplified"),
+            "goal actions after automatic reload"
           )
-          .flatMap(_ => vscode.commands.executeCommand[js.Any]("agda-mode.autoSimplified").toFuture)
-          .flatMap(_ =>
-            eventually(
-              Future.successful(document.getText().replace("\r\n", "\n")),
-              text =>
-                text.contains("zero + n = n") &&
-                  text.contains("suc n + m = {! !}"),
-              "Auto fill only the selected goal"
-            )
+        }.flatMap { _ =>
+          vscode.commands.executeCommand[js.Any]("agda-mode.autoSimplified").toFuture
+        }.flatMap(_ =>
+          eventually(
+            Future.successful(document.getText().replace("\r\n", "\n")),
+            text =>
+              text.contains("zero + n = n") &&
+                text.contains("suc n + m = {! !}") &&
+                text.contains("identity n = {! !}"),
+            "Auto fill only the selected goal"
           )
-          .map(_ => ())
+        ).map(_ => ())
       }
       .andThen { case _ =>
         vscode.commands.executeCommand[js.Any]("agda-mode.quit")

@@ -2,6 +2,7 @@ package vscextension
 
 import scala.scalajs.js
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.collection.mutable
 
 import typings.vscode.mod as vscode
 
@@ -29,6 +30,7 @@ object AgdaClient {
 class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   private var connecting = false
   private var connected = false
+  private var activationRegistered = false
   private var stopConnection: () => Unit = () => ()
   private var activeAgdaProcess: js.UndefOr[process.ChildProcess] = js.undefined
   private var outputChannel: js.UndefOr[vscode.OutputChannel] = js.undefined
@@ -37,6 +39,13 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   private var commandOutput = ""
   private var pendingGoalAction: Option[PendingGoalAction] = None
   private var goalActionOutput = ""
+  private var outputDocument: Option[vscode.TextDocument] = None
+  private val openedDocuments = mutable.Set.empty[String]
+  private val documentHolePresence = mutable.Map.empty[String, Boolean]
+  private val autoLoadTimers = mutable.Map.empty[String, js.Dynamic]
+  private val pendingAutoLoads = mutable.LinkedHashMap.empty[String, vscode.TextDocument]
+  private val suppressedDocumentChanges = mutable.Set.empty[String]
+  private val autoLoadDelayMs = 500
 
   private def setting(name: String, default: String): String =
     vscode.workspace
@@ -48,6 +57,85 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   private def isAgda(document: vscode.TextDocument): Boolean =
     document.languageId == "agda"
 
+  private def documentId(document: vscode.TextDocument): String =
+    document.uri.toString
+
+  private def hasHoles(document: vscode.TextDocument): Boolean =
+    agdaParsing.findHoles(document.getText()).nonEmpty
+
+  private def clearAutoLoadTimer(id: String): Unit =
+    autoLoadTimers.remove(id).foreach(timer => js.Dynamic.global.clearTimeout(timer))
+
+  private def clearAutoLoadState(): Unit = {
+    autoLoadTimers.keys.toVector.foreach(clearAutoLoadTimer)
+    pendingAutoLoads.clear()
+  }
+
+  private def cancelAutoLoad(document: vscode.TextDocument): Unit = {
+    val id = documentId(document)
+    clearAutoLoadTimer(id)
+    pendingAutoLoads.remove(id)
+  }
+
+  private def queueAutoLoad(document: vscode.TextDocument): Unit =
+    pendingAutoLoads.update(documentId(document), document)
+
+  private def scheduleAutoLoad(
+      context: vscode.ExtensionContext,
+      document: vscode.TextDocument
+  ): Unit = {
+    val id = documentId(document)
+    clearAutoLoadTimer(id)
+    val timer = js.Dynamic.global.setTimeout(
+      (() => {
+        autoLoadTimers.remove(id)
+        if (openedDocuments.contains(id)) {
+          if (pendingGoalAction.isDefined) scheduleAutoLoad(context, document)
+          else if (pendingCommand.isDefined || connecting) queueAutoLoad(document)
+          else runDocumentCommand(context, document, compile = false, automatic = true)
+        }
+      }): js.Function0[Unit],
+      autoLoadDelayMs
+    )
+    autoLoadTimers.update(id, timer)
+  }
+
+  private def runNextAutoLoad(context: vscode.ExtensionContext): Unit =
+    if (!connecting && pendingCommand.isEmpty && pendingGoalAction.isEmpty) {
+      pendingAutoLoads.headOption.foreach { case (id, document) =>
+        pendingAutoLoads.remove(id)
+        if (openedDocuments.contains(id))
+          runDocumentCommand(context, document, compile = false, automatic = true)
+        else runNextAutoLoad(context)
+      }
+    }
+
+  private def onDocumentOpened(context: vscode.ExtensionContext, document: vscode.TextDocument): Unit = {
+    val id = documentId(document)
+    if (isAgda(document) && openedDocuments.add(id)) {
+      documentHolePresence.update(id, hasHoles(document))
+      runDocumentCommand(context, document, compile = false, automatic = true)
+    }
+  }
+
+  private def onDocumentChanged(context: vscode.ExtensionContext, document: vscode.TextDocument): Unit =
+    if (isAgda(document)) {
+      val id = documentId(document)
+      val hadHoles = documentHolePresence.getOrElse(id, false)
+      val hasHolesNow = hasHoles(document)
+      documentHolePresence.update(id, hasHolesNow)
+      if (!suppressedDocumentChanges.contains(id) && (hadHoles || hasHolesNow))
+        scheduleAutoLoad(context, document)
+    }
+
+  private def onDocumentClosed(document: vscode.TextDocument): Unit = {
+    val id = documentId(document)
+    openedDocuments.remove(id)
+    documentHolePresence.remove(id)
+    clearAutoLoadTimer(id)
+    pendingAutoLoads.remove(id)
+  }
+
   private def workspacePath(document: vscode.TextDocument): String =
     vscode.workspace
       .getWorkspaceFolder(document.uri)
@@ -57,6 +145,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   private def reportFailure(error: Any): Unit = {
     connecting = false
     connected = false
+    pendingAutoLoads.clear()
     val message = s"Could not connect to Agda: $error"
     js.Dynamic.global.console.error(message)
     stopConnection()
@@ -102,15 +191,19 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
         new vscode.Range(document.positionAt(0), document.positionAt(currentText.length)),
         normalizedText
       )
+      val id = documentId(document)
+      suppressedDocumentChanges.add(id)
       vscode.workspace
         .applyEdit(edit)
         .`then`(
           (applied: Boolean) => {
+            suppressedDocumentChanges.remove(id)
             if (applied) withSavedDocument(document)(run)
             else vscode.window.showErrorMessage("Could not normalize Agda hole syntax before loading.")
             ()
           },
           (error: Any) => {
+            suppressedDocumentChanges.remove(id)
             vscode.window.showErrorMessage(s"Could not normalize Agda hole syntax before loading: $error")
             ()
           }
@@ -210,6 +303,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
     } else if (pendingCommand.isDefined || pendingGoalAction.isDefined) {
       vscode.window.showInformationMessage("An Agda command is already running.")
     } else {
+      outputDocument = Some(document)
       val command =
         name match {
           case "Case split"        => s"Cmd_make_case ${goal.index}"
@@ -236,15 +330,19 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   )(onApplied: => Unit): Unit = {
     val edit = new vscode.WorkspaceEdit()
     edit.replace(document.uri, range, replacement)
+    val id = documentId(document)
+    suppressedDocumentChanges.add(id)
     vscode.workspace
       .applyEdit(edit)
       .`then`(
         (applied: Boolean) => {
+          suppressedDocumentChanges.remove(id)
           if (applied) onApplied
           else vscode.window.showErrorMessage(failureMessage)
           ()
         },
         (error: Any) => {
+          suppressedDocumentChanges.remove(id)
           vscode.window.showErrorMessage(s"$failureMessage: $error")
           ()
         }
@@ -275,7 +373,11 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
     }
   }
 
-  private def completeCaseSplit(action: PendingGoalAction, lines: Vector[String]): Unit = {
+  private def completeCaseSplit(
+      context: vscode.ExtensionContext,
+      action: PendingGoalAction,
+      lines: Vector[String]
+  ): Unit = {
     pendingGoalAction = None
     if (lines.isEmpty) {
       vscode.window.showErrorMessage("Agda returned no case-split clauses.")
@@ -289,7 +391,15 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
       val range = new vscode.Range(firstLine.range.start, lastLine.range.end)
       applyEdit(action.document, range, replacement, "Agda could not apply the code action.") {
         withSavedDocument(action.document) {
-          sendCommand(interactionRequest(action.document, "Cmd_load"), "Load", "")
+          cancelAutoLoad(action.document)
+          sendCommand(
+            context,
+            action.document,
+            interactionRequest(action.document, "Cmd_load"),
+            "Load",
+            "",
+            automatic = false
+          )
         }
       }
     }
@@ -300,20 +410,64 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
     applyGiveEdit(action, replacement)
   }
 
-  private def sendCommand(request: String, label: String, successTitle: String): Unit = {
+  private def sendCommand(
+      context: vscode.ExtensionContext,
+      document: vscode.TextDocument,
+      request: String,
+      label: String,
+      successTitle: String,
+      automatic: Boolean
+  ): Unit = {
     if (!connected) {
-      vscode.window.showErrorMessage("Agda is not connected.")
+      if (automatic) queueAutoLoad(document)
+      else vscode.window.showErrorMessage("Agda is not connected.")
     } else if (activeAgdaProcess.isDefined) {
-      if (pendingCommand.isDefined) {
-        vscode.window.showInformationMessage("An Agda command is already running.")
+      if (pendingGoalAction.isDefined) {
+        if (automatic) scheduleAutoLoad(context, document)
+        else vscode.window.showInformationMessage("An Agda command is already running.")
+      } else if (pendingCommand.isDefined) {
+        if (automatic) queueAutoLoad(document)
+        else vscode.window.showInformationMessage("An Agda command is already running.")
       } else {
+        outputDocument = Some(document)
         outputChannel.foreach(_.show(true))
         pendingCommand = Some(new PendingCommand(label, successTitle))
         commandOutput = ""
         process.writeText(activeAgdaProcess.get.stdin, request)
       }
     } else if (AgdaLsp.isActive) {
+      outputDocument = Some(document)
       AgdaLsp.sendCommand(request, label)
+    }
+  }
+
+  private def runDocumentCommand(
+      context: vscode.ExtensionContext,
+      document: vscode.TextDocument,
+      compile: Boolean,
+      automatic: Boolean
+  ): Unit = {
+    if (!isAgda(document)) {
+      if (!automatic) vscode.window.showErrorMessage("The active document is not an Agda file.")
+    } else {
+      if (!automatic && !compile) cancelAutoLoad(document)
+      val runCommand = () => {
+        val request =
+          if (compile)
+            interactionRequest(document, "Cmd_compile GHCNoMain")
+          else
+            interactionRequest(document, "Cmd_load")
+        val label = if (compile) "Compile" else "Load"
+        val successTitle = if (compile) "*Compilation result*" else ""
+        if (!compile) agdaHighlighting.clear(document)
+        connect(context, document).`then`((_: Unit) => {
+          if (connected && (!automatic || openedDocuments.contains(documentId(document))))
+            sendCommand(context, document, request, label, successTitle, automatic)
+          ()
+        })
+      }
+      if (compile) withSavedDocument(document)(runCommand())
+      else prepareDocumentForLoad(document)(runCommand())
     }
   }
 
@@ -326,23 +480,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
       case Some(editor) if !isAgda(editor.document) =>
         vscode.window.showErrorMessage("The active document is not an Agda file.")
       case Some(editor) =>
-        val document = editor.document
-        val runCommand = () => {
-          val request =
-            if (compile)
-              interactionRequest(document, "Cmd_compile GHCNoMain")
-            else
-              interactionRequest(document, "Cmd_load")
-          val label = if (compile) "Compile" else "Load"
-          val successTitle = if (compile) "*Compilation result*" else ""
-          if (!compile) agdaHighlighting.clear(document)
-          connect(context, document).`then`((_: Unit) => {
-            if (connected) sendCommand(request, label, successTitle)
-            ()
-          })
-        }
-        if (compile) withSavedDocument(document)(runCommand())
-        else prepareDocumentForLoad(document)(runCommand())
+        runDocumentCommand(context, editor.document, compile, automatic = false)
     }
   }
 
@@ -365,7 +503,8 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
       context: vscode.ExtensionContext,
       document: vscode.TextDocument,
       executable: String
-  ): js.Promise[Unit] =
+  ): js.Promise[Unit] = {
+    outputDocument = Some(document)
     new js.Promise[Unit]((resolve, reject) => {
       val childProcess =
         process.spawn(executable, js.Array("--interaction"), workspacePath(document))
@@ -403,7 +542,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
 
       val onOutput: js.Function1[Any, Unit] = (chunk: Any) => {
         val text = chunk.asInstanceOf[js.Dynamic].toString().asInstanceOf[String]
-        val events = agdaHighlighting.consume(document, text)
+        val events = agdaHighlighting.consume(outputDocument.getOrElse(document), text)
         events.foreach {
           case agdaParsing.StatusEvent(true) =>
             pendingCommand.foreach { command =>
@@ -421,7 +560,9 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
               if (title == command.successTitle) command.succeeded = true
             }
           case agdaParsing.MakeCaseEvent(lines) =>
-            pendingGoalAction.filter(_.name == "Case split").foreach(action => completeCaseSplit(action, lines))
+            pendingGoalAction
+              .filter(_.name == "Case split")
+              .foreach(action => completeCaseSplit(context, action, lines))
           case agdaParsing.GiveParenEvent(index) =>
             pendingGoalAction
               .filter(action => action.name != "Case split" && action.goal.index == index)
@@ -469,6 +610,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
                   s"Agda ${command.label} finished. See the Agda Output channel for the result."
                 )
             }
+            runNextAutoLoad(context)
           }
         }
         if (!settled && buffer.contains("Agda2>")) {
@@ -520,6 +662,7 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
         ]
       )
     })
+  }
 
   private def connect(
       context: vscode.ExtensionContext,
@@ -559,18 +702,35 @@ class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
     vscode.window.activeTextEditor.foreach(editor => connect(context, editor.document))
 
   def quitCommand(): Unit = {
+    clearAutoLoadState()
     stopConnection()
     connected = false
     activeAgdaProcess = js.undefined
   }
 
   def activate(context: vscode.ExtensionContext): Unit = {
+    if (activationRegistered) return
+    activationRegistered = true
     val onOpen = vscode.workspace.onDidOpenTextDocument(
-      (document: vscode.TextDocument) => connect(context, document),
+      (document: vscode.TextDocument) => onDocumentOpened(context, document),
       js.undefined,
       js.undefined
     )
     context.pushDisposable(onOpen)
-    vscode.window.activeTextEditor.foreach(editor => connect(context, editor.document))
+    val onChange = vscode.workspace.onDidChangeTextDocument(
+      (event: vscode.TextDocumentChangeEvent) => onDocumentChanged(context, event.document),
+      js.undefined,
+      js.undefined
+    )
+    context.pushDisposable(onChange)
+    val onClose = vscode.workspace.onDidCloseTextDocument(
+      (document: vscode.TextDocument) => onDocumentClosed(document),
+      js.undefined,
+      js.undefined
+    )
+    context.pushDisposable(onClose)
+    context.pushDisposable(new vscode.Disposable(() => clearAutoLoadState()))
+    vscode.workspace.textDocuments.iterator.foreach(document => onDocumentOpened(context, document))
+    vscode.window.activeTextEditor.foreach(editor => onDocumentOpened(context, editor.document))
   }
 }
