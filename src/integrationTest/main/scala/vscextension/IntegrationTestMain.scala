@@ -18,7 +18,9 @@ object IntegrationTestMain {
   def main(args: Array[String]): Unit = {
     val thisExtension = vscode.extensions.getExtension[js.Any](extensionId)
     Option(thisExtension.get) match {
-      case Some(ex) => agdaAutoSuite.run()
+      case Some(ex) =>
+        holeFillSuite.run()
+        autoLoadSuite.run()
       case None     => throw new Exception(s"Extension '$extensionId' was not found in the extension host.")
     }
 

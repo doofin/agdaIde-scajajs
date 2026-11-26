@@ -20,7 +20,9 @@ import Mocha.*
 import IntegrationTestMain.extensionId
 import vsc.commands
 
-object agdaAutoSuite {
+/** test suite for Agda automatic hole filling and normalization
+  */
+object holeFillSuite {
   def agdaVersion = {
     val result = spawnSync("agda", js.Array("--numeric-version"))
     val status = result.status
@@ -77,8 +79,8 @@ object agdaAutoSuite {
       |  zero : Nat
       |  suc : Nat → Nat
       |_+_ : Nat → Nat → Nat
-      |zero + n = ?
-      |suc n + m = {}
+      |zero + n = {! !}
+      |suc n + m = {! !}
       |""".stripMargin
 
   def getDocument(extension: vscode.Extension[_], str: String) = {
@@ -109,58 +111,25 @@ object agdaAutoSuite {
 
     documentF
       .flatMap { document =>
-        vscode.window.showTextDocument(document).toFuture.map(editor => (document, editor))
-      }
-      .flatMap { case (document, editor) =>
-        eventually(
-          Future.successful(document.getText().replace("\r\n", "\n")),
-          text =>
-            text.contains("zero + n = {! !}") &&
-              text.contains("suc n + m = {! !}") &&
-              !document.isDirty,
-          "automatic load to normalize and save ? and {} holes"
-        ).map { _ =>
+        vscode.window.showTextDocument(document).toFuture.map { editor =>
           val firstHole = document.getText().indexOf("zero + n = {! !}")
-          if (firstHole < 0) throw new Exception("Automatic load did not normalize the first goal.")
+          if (firstHole < 0) throw new Exception("Auto integration fixture has no first goal.")
           val position = document.positionAt(firstHole + "zero + n = {! ".length)
           editor.selection = new vscode.Selection(position, position)
-          (document, editor, position)
+          (document, position)
         }
       }
-      .flatMap { case (document, _, position) =>
+      .flatMap { case (document, position) =>
         eventually(
           codeActionsAt(document, position),
           actions => actions.exists(_.command.get.command == "agda-mode.autoSimplified"),
           "Auto (Simplified) code action after loading on open"
         ).flatMap { _ =>
-          val appendedHole = "\nidentity : Nat → Nat\nidentity n = ?\n"
-          val end = document.positionAt(document.getText().length)
-          val edit = new vscode.WorkspaceEdit()
-          edit.replace(document.uri, new vscode.Range(end, end), appendedHole)
-          vscode.workspace.applyEdit(edit).toFuture
-        }.flatMap { _ =>
-          eventually(
-            Future.successful(document.getText().replace("\r\n", "\n")),
-            text => text.contains("identity n = {! !}") && !document.isDirty,
-            "automatic load after adding a hole"
-          )
-        }.flatMap { _ =>
-          val addedHole = document.getText().lastIndexOf("{! !}")
-          val addedPosition = document.positionAt(addedHole + 2)
-          eventually(
-            codeActionsAt(document, addedPosition),
-            actions => actions.exists(_.command.get.command == "agda-mode.autoSimplified"),
-            "goal actions after automatic reload"
-          )
-        }.flatMap { _ =>
           vscode.commands.executeCommand[js.Any]("agda-mode.autoSimplified").toFuture
         }.flatMap(_ =>
           eventually(
             Future.successful(document.getText().replace("\r\n", "\n")),
-            text =>
-              text.contains("zero + n = n") &&
-                text.contains("suc n + m = {! !}") &&
-                text.contains("identity n = {! !}"),
+            text => text.contains("zero + n = n") && text.contains("suc n + m = {! !}"),
             "Auto fill only the selected goal"
           )
         ).map(_ => ())

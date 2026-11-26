@@ -106,7 +106,9 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 - Agda documents are loaded automatically when opened. Edits are debounced
   per document and trigger a reload when a hole existed before or after the
   edit; load normalization and code-action edits are excluded to avoid
-  redundant loads. Direct-backend output is associated with the document
-  whose command is running.
-- The extension-host integration test verifies automatic normalization and
-  loading on open, then inserts another hole and verifies automatic reload.
+  redundant loads. The scheduling and document tracking live in
+  `AgdaAutoLoad`; direct-backend output is associated with the document whose
+  command is running.
+- `agdaAutoLoadSuite` separately verifies normalization and loading on open,
+  then inserts another hole and checks that automatic reload restores goal
+  actions.
