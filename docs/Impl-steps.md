@@ -86,3 +86,18 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 5th round instructions:
 - when doing agda load, support using ? and {} for holes in the agda file, and replace them with appropriate Agda hole syntax and save the file before sending the load request. underline the holes in the editor.
 - Add shortcut support for agda commands like Load(C-c l), Compile(C-c c), and Auto (Simplified)(C-c a), and allow user to configure keybindings for them.
+- split parsing(Scala code that doen't depend on vscode) code into agdaParsing and add munit unit tests for it under src/test
+- auto load Agda files when they are opened. also audo load when holes are changed.
+
+5th round result:
+- On Load, `?` and `{}` are converted to `{! !}` outside comments, strings,
+  and existing holes; the document is saved before the Agda load request.
+- Agda holes are underlined in visible editors and the decoration updates as
+  the document changes. The underline color is configurable with
+  `agdaMode.holes.decorationColor` (default: `yellow`).
+- Added default `Ctrl+C` chord shortcuts for Load (`Ctrl+L`), Compile
+  (`Ctrl+C`), and Auto (Simplified) (`Ctrl+A`). Users can customize these
+  contributed keybindings in VS Code Keyboard Shortcuts.
+- Extracted VS Code-independent S-expression and hole parsing into
+  `agdaParsing`, with MUnit coverage under `src/test`. Root `sbt test` runs
+  these tests on the JVM so they do not load VS Code's host-provided module.

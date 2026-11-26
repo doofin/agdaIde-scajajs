@@ -60,6 +60,14 @@ object agdaAutoSuite {
       test("Auto (Simplified) fills the selected hole and keeps the next hole") { () =>
         runAutoFillTest(extension).toJSPromise
       }
+
+      test("hole normalization ignores Agda comments, strings, and existing holes") { () =>
+        val source = "-- ? and {}\n{- ? {- {} -} ? -}\n\"? {}\" ? {} {! keep ? and {} !}"
+        val expected = "-- ? and {}\n{- ? {- {} -} ? -}\n\"? {}\" {! !} {! !} {! keep ? and {} !}"
+        val actual = agdaParsing.normalizeHoleSyntax(source)
+        if (actual != expected) throw new Exception(s"Unexpected normalized holes: $actual")
+        Future.successful(()).toJSPromise
+      }
     }
   }
 
@@ -69,8 +77,8 @@ object agdaAutoSuite {
       |  zero : Nat
       |  suc : Nat → Nat
       |_+_ : Nat → Nat → Nat
-      |zero + n = {!   !}
-      |suc n + m = {!   !}
+      |zero + n = ?
+      |suc n + m = {}
       |""".stripMargin
 
   def getDocument(extension: vscode.Extension[_], str: String) = {
@@ -102,9 +110,9 @@ object agdaAutoSuite {
     documentF
       .flatMap { document =>
         vscode.window.showTextDocument(document).toFuture.map { editor =>
-          val holeOffset = document.getText().indexOf("{!")
+          val holeOffset = document.getText().indexOf("?")
           if (holeOffset < 0) throw new Exception("Auto integration fixture has no goal.")
-          val position = document.positionAt(holeOffset + 2)
+          val position = document.positionAt(holeOffset + 1)
           editor.selection = new vscode.Selection(position, position)
           (document, position)
         }
@@ -112,6 +120,16 @@ object agdaAutoSuite {
       .flatMap { case (document, position) =>
         vscode.commands
           .executeCommand[js.Any]("agda-mode.load")
+          .flatMap(_ =>
+            eventually(
+              Future.successful(document.getText().replace("\r\n", "\n")),
+              text =>
+                text.contains("zero + n = {! !}") &&
+                  text.contains("suc n + m = {! !}") &&
+                  !document.isDirty,
+              "Load to normalize and save ? and {} holes"
+            )
+          )
           .flatMap(_ =>
             eventually(
               codeActionsAt(document, position),
@@ -130,7 +148,7 @@ object agdaAutoSuite {
               Future.successful(document.getText().replace("\r\n", "\n")),
               text =>
                 text.contains("zero + n = n") &&
-                  text.contains("suc n + m = {!   !}"),
+                  text.contains("suc n + m = {! !}"),
               "Auto fill only the selected goal"
             )
           )

@@ -5,6 +5,11 @@ import typings.vscode.anon.Dispose
 
 object vscodeUtils {
   extension (context: vscode.ExtensionContext) {
+
+    /** Pushes a disposable to the extension context's subscriptions. This executes the actions of operation on
+      * extension
+      * @param disposable
+      */
     def pushDisposable(disposable: vscode.Disposable): Unit = {
       context.subscriptions.push(disposable.asInstanceOf[Dispose])
     }

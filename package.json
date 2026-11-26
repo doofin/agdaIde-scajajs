@@ -50,7 +50,7 @@
             }
         ],
         "configuration": {
-            "title": "Agda Mode (Scala.js)",
+            "title": "Agda Ide Scala",
             "properties": {
                 "agdaMode.connection.backend": {
                     "type": "string",
@@ -70,6 +70,11 @@
                     "type": "string",
                     "default": "agda",
                     "description": "Agda executable used with --interaction."
+                },
+                "agdaMode.holes.decorationColor": {
+                    "type": "string",
+                    "default": "underline yellow",
+                    "description": "color to decorate Agda holes."
                 }
             }
         },
@@ -87,8 +92,29 @@
                 "title": "Agda: Compile"
             },
             {
+                "command": "agda-mode.autoSimplified",
+                "title": "Agda: Auto (Simplified)"
+            },
+            {
                 "command": "agda-mode.quit",
                 "title": "Agda: Quit Server"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "agda-mode.load",
+                "key": "ctrl+c ctrl+l",
+                "when": "editorLangId == agda && editorTextFocus"
+            },
+            {
+                "command": "agda-mode.compile",
+                "key": "ctrl+c ctrl+c",
+                "when": "editorLangId == agda && editorTextFocus"
+            },
+            {
+                "command": "agda-mode.autoSimplified",
+                "key": "ctrl+c ctrl+a",
+                "when": "editorLangId == agda && editorTextFocus"
             }
         ],
         "menus": {
@@ -103,6 +129,10 @@
                 },
                 {
                     "command": "agda-mode.compile",
+                    "when": "editorLangId == agda"
+                },
+                {
+                    "command": "agda-mode.autoSimplified",
                     "when": "editorLangId == agda"
                 },
                 {

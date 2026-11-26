@@ -12,11 +12,11 @@ import vscextension.AgdaClient.PendingCommand
 import AgdaClient.*
 
 object AgdaClient {
-  def apply(): AgdaClient = new AgdaClient
+  def apply(agdaHighlighting: AgdaHighlighting): AgdaClient = new AgdaClient(agdaHighlighting)
   final case class PendingGoalAction(
       name: String,
       document: vscode.TextDocument,
-      goal: AgdaHighlighting.GoalLocation,
+      goal: agdaParsing.GoalLocation,
       content: String
   )
 
@@ -26,7 +26,7 @@ object AgdaClient {
   }
 }
 
-class AgdaClient {
+class AgdaClient(private val agdaHighlighting: AgdaHighlighting) {
   private var connecting = false
   private var connected = false
   private var stopConnection: () => Unit = () => ()
@@ -90,6 +90,34 @@ class AgdaClient {
         }
       )
 
+  private def prepareDocumentForLoad(document: vscode.TextDocument)(run: => Unit): Unit = {
+    val currentText = document.getText()
+    val normalizedText = agdaParsing.normalizeHoleSyntax(currentText)
+    if (normalizedText == currentText) {
+      withSavedDocument(document)(run)
+    } else {
+      val edit = new vscode.WorkspaceEdit()
+      edit.replace(
+        document.uri,
+        new vscode.Range(document.positionAt(0), document.positionAt(currentText.length)),
+        normalizedText
+      )
+      vscode.workspace
+        .applyEdit(edit)
+        .`then`(
+          (applied: Boolean) => {
+            if (applied) withSavedDocument(document)(run)
+            else vscode.window.showErrorMessage("Could not normalize Agda hole syntax before loading.")
+            ()
+          },
+          (error: Any) => {
+            vscode.window.showErrorMessage(s"Could not normalize Agda hole syntax before loading: $error")
+            ()
+          }
+        )
+    }
+  }
+
   private def codePointCount(text: String): Int = {
     var offset = 0
     var count = 0
@@ -114,7 +142,7 @@ class AgdaClient {
     s"(Pn () ${codePointCount(prefix) + 1} $line ${codePointCount(lineText) + 1})"
   }
 
-  private def interactionRange(document: vscode.TextDocument, goal: AgdaHighlighting.GoalLocation): String = {
+  private def interactionRange(document: vscode.TextDocument, goal: agdaParsing.GoalLocation): String = {
     val start = if (goal.braced) goal.start + 2 else goal.start
     val end = if (goal.braced) goal.end - 2 else goal.end
     agdaRange(document, start, end)
@@ -150,7 +178,7 @@ class AgdaClient {
         val document = editor.document
         withSavedDocument(document) {
           val offset = document.offsetAt(editor.selection.active).toInt
-          AgdaHighlighting.goalAt(document, offset) match {
+          agdaHighlighting.goalAt(document, offset) match {
             case None =>
               vscode.window.showErrorMessage("Move the cursor into a loaded Agda goal first.")
             case Some(goal) =>
@@ -174,7 +202,7 @@ class AgdaClient {
   private def sendGoalAction(
       name: String,
       document: vscode.TextDocument,
-      goal: AgdaHighlighting.GoalLocation,
+      goal: agdaParsing.GoalLocation,
       content: String
   ): Unit = {
     if (!connected || !activeAgdaProcess.isDefined) {
@@ -298,20 +326,23 @@ class AgdaClient {
       case Some(editor) if !isAgda(editor.document) =>
         vscode.window.showErrorMessage("The active document is not an Agda file.")
       case Some(editor) =>
-        withSavedDocument(editor.document) {
+        val document = editor.document
+        val runCommand = () => {
           val request =
             if (compile)
-              interactionRequest(editor.document, "Cmd_compile GHCNoMain")
+              interactionRequest(document, "Cmd_compile GHCNoMain")
             else
-              interactionRequest(editor.document, "Cmd_load")
+              interactionRequest(document, "Cmd_load")
           val label = if (compile) "Compile" else "Load"
           val successTitle = if (compile) "*Compilation result*" else ""
-          if (!compile) AgdaHighlighting.clear(editor.document)
-          connect(context, editor.document).`then`((_: Unit) => {
+          if (!compile) agdaHighlighting.clear(document)
+          connect(context, document).`then`((_: Unit) => {
             if (connected) sendCommand(request, label, successTitle)
             ()
           })
         }
+        if (compile) withSavedDocument(document)(runCommand())
+        else prepareDocumentForLoad(document)(runCommand())
     }
   }
 
@@ -372,34 +403,34 @@ class AgdaClient {
 
       val onOutput: js.Function1[Any, Unit] = (chunk: Any) => {
         val text = chunk.asInstanceOf[js.Dynamic].toString().asInstanceOf[String]
-        val events = AgdaHighlighting.consume(document, text)
+        val events = agdaHighlighting.consume(document, text)
         events.foreach {
-          case AgdaHighlighting.StatusEvent(true) =>
+          case agdaParsing.StatusEvent(true) =>
             pendingCommand.foreach { command =>
               if (command.label == "Load") command.succeeded = true
             }
-          case AgdaHighlighting.InfoEvent(title, message) if title == "*Error*" || title.contains("Errors") =>
+          case agdaParsing.InfoEvent(title, message) if title == "*Error*" || title.contains("Errors") =>
             pendingCommand.foreach(_.errorMessage = Some(message))
             pendingGoalAction.foreach { action =>
               pendingGoalAction = None
               goalActionOutput = ""
               vscode.window.showErrorMessage(s"Agda ${action.name} failed: $message")
             }
-          case AgdaHighlighting.InfoEvent(title, _) =>
+          case agdaParsing.InfoEvent(title, _) =>
             pendingCommand.foreach { command =>
               if (title == command.successTitle) command.succeeded = true
             }
-          case AgdaHighlighting.MakeCaseEvent(lines) =>
+          case agdaParsing.MakeCaseEvent(lines) =>
             pendingGoalAction.filter(_.name == "Case split").foreach(action => completeCaseSplit(action, lines))
-          case AgdaHighlighting.GiveParenEvent(index) =>
+          case agdaParsing.GiveParenEvent(index) =>
             pendingGoalAction
               .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, s"(${action.content})"))
-          case AgdaHighlighting.GiveNoParenEvent(index) =>
+          case agdaParsing.GiveNoParenEvent(index) =>
             pendingGoalAction
               .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, action.content))
-          case AgdaHighlighting.GiveStringEvent(index, content) =>
+          case agdaParsing.GiveStringEvent(index, content) =>
             pendingGoalAction
               .filter(action => action.name != "Case split" && action.goal.index == index)
               .foreach(action => completeGive(action, content))

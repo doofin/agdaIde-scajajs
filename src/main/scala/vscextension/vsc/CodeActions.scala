@@ -43,7 +43,7 @@ object CodeActions {
     fix
   }
 
-  def registerCodeActions(context: vscode.ExtensionContext): Unit = {
+  def registerCodeActions(context: vscode.ExtensionContext, agdaHighlighting: AgdaHighlighting): Unit = {
     val provider = new js.Object {
       def provideCodeActions(
           document: vscode.TextDocument,
@@ -52,7 +52,7 @@ object CodeActions {
           _token: vscode.CancellationToken
       ): js.Array[vscode.CodeAction] = {
         val offset = document.offsetAt(range.start).toInt
-        val goal = AgdaHighlighting.goalAt(document, offset)
+        val goal = agdaHighlighting.goalAt(document, offset)
         val canSplit = goal.exists { found =>
           val line = document.lineAt(document.positionAt(found.start).line.toInt)
           val lineEnd = document.offsetAt(line.range.end).toInt

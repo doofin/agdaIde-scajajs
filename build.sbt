@@ -8,6 +8,23 @@ val munitVersion = "1.0.4"
 lazy val open = taskKey[Unit]("open vscode")
 lazy val prepareExtension = taskKey[Unit]("prepare extension output")
 
+// pure unit tests that run on the JVM only, for VS Code-independent code like agdaParsing
+lazy val pureUnitTests = project
+  .in(file("src/test"))
+  .settings(
+    moduleName := "pureUnitTests",
+    scalaVersion := scala3Version,
+    Compile / unmanagedSourceDirectories +=
+      baseDirectory.value.getParentFile / "main" / "scala-pure",
+    // Compile shared pure sources on the JVM without pulling in the Scala.js extension.
+    Test / unmanagedSourceDirectories := Seq(
+      baseDirectory.value / "scala",
+      baseDirectory.value / "java"
+    ),
+    Test / resourceDirectory := baseDirectory.value / "resources",
+    libraryDependencies += "org.scalameta" %% "munit" % munitVersion % Test
+  )
+
 lazy val root = project
   .in(file("."))
   .enablePlugins(
@@ -23,11 +40,12 @@ lazy val root = project
     scalacOptions ++= Seq(
       "-Wunused:all"
     ),
+    Compile / unmanagedSourceDirectories +=
+      baseDirectory.value / "src" / "main" / "scala-pure",
     Compile / fastOptJS / artifactPath := baseDirectory.value / "out" / "extension.js",
     Compile / fullOptJS / artifactPath := baseDirectory.value / "out" / "extension.js",
-    libraryDependencies ++= Seq(
-      "org.scalameta" %%% "munit" % munitVersion % Test
-    ),
+    Test / unmanagedSourceDirectories := Seq.empty,
+    Test / test := (pureUnitTests / Test / test).value,
     Compile / npmDependencies ++=
       Seq(
         "@types/vscode" -> "1.96.0", //
