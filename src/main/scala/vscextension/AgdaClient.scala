@@ -200,24 +200,27 @@ class AgdaClient {
     }
   }
 
-  private def applyGoalEdit(
+  private def applyEdit(
       document: vscode.TextDocument,
       range: vscode.Range,
       replacement: String,
-      reload: Boolean
-  ): Unit = {
+      failureMessage: String
+  )(onApplied: => Unit): Unit = {
     val edit = new vscode.WorkspaceEdit()
     edit.replace(document.uri, range, replacement)
     vscode.workspace
       .applyEdit(edit)
-      .`then`((applied: Boolean) => {
-        if (applied && reload) {
-          withSavedDocument(document) {
-            sendCommand(interactionRequest(document, "Cmd_load"), "Load", "")
-          }
-        } else if (!applied) vscode.window.showErrorMessage("Agda could not apply the code action.")
-        ()
-      })
+      .`then`(
+        (applied: Boolean) => {
+          if (applied) onApplied
+          else vscode.window.showErrorMessage(failureMessage)
+          ()
+        },
+        (error: Any) => {
+          vscode.window.showErrorMessage(s"$failureMessage: $error")
+          ()
+        }
+      )
   }
 
   private def applyGiveEdit(action: PendingGoalAction, replacement: String): Unit = {
@@ -228,29 +231,20 @@ class AgdaClient {
     )
     val filledStart = action.goal.start
     val filledEnd = filledStart + replacement.length
-    val edit = new vscode.WorkspaceEdit()
-    edit.replace(document.uri, range, replacement)
-    vscode.workspace
-      .applyEdit(edit)
-      .`then`((applied: Boolean) => {
-        if (applied) {
-          withSavedDocument(document) {
-            if (connected && activeAgdaProcess.isDefined) {
-              process.writeText(
-                activeAgdaProcess.get.stdin,
-                highlightRequest(document, action.goal.index, filledStart, filledEnd)
-              )
-            } else {
-              vscode.window.showErrorMessage(
-                "Agda disconnected before it could highlight the filled goal."
-              )
-            }
-          }
+    applyEdit(document, range, replacement, "Agda could not apply the filled goal.") {
+      withSavedDocument(document) {
+        if (connected && activeAgdaProcess.isDefined) {
+          process.writeText(
+            activeAgdaProcess.get.stdin,
+            highlightRequest(document, action.goal.index, filledStart, filledEnd)
+          )
         } else {
-          vscode.window.showErrorMessage("Agda could not apply the filled goal.")
+          vscode.window.showErrorMessage(
+            "Agda disconnected before it could highlight the filled goal."
+          )
         }
-        ()
-      })
+      }
+    }
   }
 
   private def completeCaseSplit(action: PendingGoalAction, lines: Vector[String]): Unit = {
@@ -265,7 +259,11 @@ class AgdaClient {
       val indentation = firstLine.text.takeWhile(char => char == ' ' || char == '\t')
       val replacement = indentation + lines.mkString("\n" + indentation)
       val range = new vscode.Range(firstLine.range.start, lastLine.range.end)
-      applyGoalEdit(action.document, range, replacement, reload = true)
+      applyEdit(action.document, range, replacement, "Agda could not apply the code action.") {
+        withSavedDocument(action.document) {
+          sendCommand(interactionRequest(action.document, "Cmd_load"), "Load", "")
+        }
+      }
     }
   }
 
