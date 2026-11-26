@@ -115,5 +115,8 @@ Overall plan is at [Impl-plan-agda.md](Impl-plan-agda.md)
 
 
   6th round instructions:
-  - go to definition: think how to implement this feature, don't code it yet
+  - go to definition(and show references): think how to implement this feature, don't code it yet
   - ok impl it(go to definition) only for agda backend, no als yet
+  - show type information for the symbol under the cursor.
+  - "go to symbol in editor": list the functions and data types in the current file.  think how to implement this feature, don't code it yet
+  - Show or Focus Hover (editor.action.showHover). Displays the code documentation or type tooltip under your cursor.
