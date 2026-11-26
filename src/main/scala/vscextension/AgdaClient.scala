@@ -7,20 +7,26 @@ import typings.vscode.mod as vscode
 
 import vscextension.io.process
 import facade.vscodeUtils.*
+import vscextension.AgdaClient.PendingCommand
+
+import AgdaClient.*
 
 object AgdaClient {
-  private final case class PendingGoalAction(
+  def apply(): AgdaClient = new AgdaClient
+  final case class PendingGoalAction(
       name: String,
       document: vscode.TextDocument,
       goal: AgdaHighlighting.GoalLocation,
       content: String
   )
 
-  private final class PendingCommand(val label: String, val successTitle: String) {
+  final class PendingCommand(val label: String, val successTitle: String) {
     var succeeded = false
     var errorMessage: Option[String] = None
   }
+}
 
+class AgdaClient {
   private var connecting = false
   private var connected = false
   private var stopConnection: () => Unit = () => ()
@@ -135,15 +141,7 @@ object AgdaClient {
       )}" )""" + "\n"
   }
 
-  def caseSplitAtCursor(): Unit = runGoalAction("Case split")
-
-  def giveAtCursor(): Unit = runGoalAction("Give")
-
-  def autoSimplifiedAtCursor(): Unit = runGoalAction("Auto (Simplified)", promptWhenEmpty = false)
-
-  def runGoalAction(name: String): Unit = runGoalAction(name, promptWhenEmpty = true)
-
-  private def runGoalAction(name: String, promptWhenEmpty: Boolean): Unit =
+  def runGoalAction(name: String, promptWhenEmpty: Boolean = true): Unit =
     vscode.window.activeTextEditor.toOption match {
       case None => vscode.window.showErrorMessage("Open an Agda file first.")
       case Some(editor) if !isAgda(editor.document) =>
@@ -293,7 +291,7 @@ object AgdaClient {
     }
   }
 
-  private def execAgdaCommand(
+  def execAgdaCommand(
       context: vscode.ExtensionContext,
       compile: Boolean = false
   ): Unit = {
@@ -528,6 +526,15 @@ object AgdaClient {
     pendingConnection
   }
 
+  def connectCommand(context: vscode.ExtensionContext): Unit =
+    vscode.window.activeTextEditor.foreach(editor => connect(context, editor.document))
+
+  def quitCommand(): Unit = {
+    stopConnection()
+    connected = false
+    activeAgdaProcess = js.undefined
+  }
+
   def activate(context: vscode.ExtensionContext): Unit = {
     val onOpen = vscode.workspace.onDidOpenTextDocument(
       (document: vscode.TextDocument) => connect(context, document),
@@ -535,45 +542,6 @@ object AgdaClient {
       js.undefined
     )
     context.pushDisposable(onOpen)
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.connect",
-        (_: Any) => {
-          vscode.window.activeTextEditor.foreach(editor => connect(context, editor.document))
-          ()
-        }
-      )
-    )
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.load",
-        (_: Any) => {
-          execAgdaCommand(context)
-          ()
-        }
-      )
-    )
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.compile",
-        (_: Any) => {
-          execAgdaCommand(context, compile = true)
-          ()
-        }
-      )
-    )
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.quit",
-        (_: Any) => {
-          stopConnection()
-          connected = false
-          activeAgdaProcess = js.undefined
-          ()
-        }
-      )
-    )
-
     vscode.window.activeTextEditor.foreach(editor => connect(context, editor.document))
   }
 }

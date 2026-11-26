@@ -4,7 +4,7 @@ import scala.scalajs.js
 
 import typings.vscode.mod as vscode
 
-import vscextension.{AgdaClient, AgdaHighlighting}
+import vscextension.AgdaHighlighting
 import vscextension.facade.vscodeUtils.*
 
 object CodeActions {
@@ -44,25 +44,6 @@ object CodeActions {
   }
 
   def registerCodeActions(context: vscode.ExtensionContext): Unit = {
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.caseSplit",
-        (_: Any) => AgdaClient.caseSplitAtCursor()
-      )
-    )
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.give",
-        (_: Any) => AgdaClient.giveAtCursor()
-      )
-    )
-    context.pushDisposable(
-      vscode.commands.registerCommand(
-        "agda-mode.autoSimplified",
-        (_: Any) => AgdaClient.autoSimplifiedAtCursor()
-      )
-    )
-
     val provider = new js.Object {
       def provideCodeActions(
           document: vscode.TextDocument,

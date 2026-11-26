@@ -1,40 +1,34 @@
 package vscextension.vsc
 
-import typings.vscode.mod as vscode
-
-import scala.collection.immutable
 import scala.scalajs.js
 
-import _root_.vscextension.facade.vscodeUtils.*
+import typings.vscode.mod as vscode
+import vscextension.AgdaClient
+import vscextension.facade.vscodeUtils.*
 
 /** Commands are actions that a user can invoke in the vscode extension with command palette (ctrl+shift+p).
   *
   * This object registers all the commands in the extension.
   */
 object commands {
-  // Store all the commands here
-  def registerAllCommands(context: vscode.ExtensionContext) = {
-    val cmds =
-      Seq(
-        ("extension.helloWorld", showHello)
+  def registerAllCommands(context: vscode.ExtensionContext, agdaClient: AgdaClient): Unit = {
+    val cmds: Seq[(String, Any => Unit)] = Seq(
+      ("agda-mode.connect", (_: Any) => agdaClient.connectCommand(context)),
+      ("agda-mode.load", (_: Any) => agdaClient.execAgdaCommand(context)),
+      ("agda-mode.compile", (_: Any) => agdaClient.execAgdaCommand(context, compile = true)),
+      ("agda-mode.quit", (_: Any) => agdaClient.quitCommand()),
+      ("agda-mode.caseSplit", (_: Any) => agdaClient.runGoalAction("Case split")),
+      ("agda-mode.give", (_: Any) => agdaClient.runGoalAction("Give")),
+      (
+        "agda-mode.autoSimplified",
+        (_: Any) => agdaClient.runGoalAction("Auto (Simplified)", promptWhenEmpty = false)
       )
+    )
 
-      // register the commands
-    cmds foreach { (name, fun) =>
+    cmds.foreach { case (name, handler) =>
       context.pushDisposable(
-        vscode.commands.registerCommand(name, fun)
+        vscode.commands.registerCommand(name, handler)
       )
     }
-  }
-
-  /** Example command. VSCode commands can take an argument of any type, hence the `Any` here.
-    *
-    * @param arg
-    *   the argument (we don't use, but could be useful for other commands)
-    */
-  def showHello(arg: Any): Unit = {
-    // show a message box when the command is executed in command palette
-    // by typing hello
-    vscode.window.showInformationMessage(s"Hello World! How are you ?")
   }
 }
